@@ -66,8 +66,12 @@ class DataManager:
 
     def _merge_machines(self, existing: MachineInfo, new_info: MachineInfo):
         """Internal helper to merge machine info."""
+        print(f"[MERGE] {existing.ip}: existing hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
+        print(f"[MERGE] {existing.ip}: new hostname={new_info.hostname}, snmp={getattr(new_info, 'snmp_active', False)}, method={new_info.collection_method}")
+        
         if new_info.hostname and new_info.hostname != 'unknown' and new_info.hostname != new_info.ip:
             existing.hostname = new_info.hostname
+        
         if new_info.os_type and new_info.os_type != 'unknown':
             existing.os_type = new_info.os_type
         if new_info.os_version:
@@ -83,9 +87,6 @@ class DataManager:
         for field in ['dns_name', 'mdns_name', 'netbios_name', 'snmp_sysname', 'sys_descr']:
             if hasattr(new_info, field) and getattr(new_info, field):
                 setattr(existing, field, getattr(new_info, field))
-            elif hasattr(existing, field) and not getattr(existing, field):
-                # Ensure fields exist on existing even if empty
-                setattr(existing, field, getattr(existing, field, ""))
 
         if new_info.is_online:
             existing.is_online = True
@@ -98,11 +99,13 @@ class DataManager:
             existing.snmp_active = False
             
         # Method priority
-        method_priority = {'snmp': 4, 'ssh': 3, 'local': 2, 'arp': 1}
+        method_priority = {'snmp': 4, 'ssh': 3, 'local': 2, 'arp': 1, 'ping': 1, '?': 0}
         existing_prio = method_priority.get(existing.collection_method, 0)
         new_prio = method_priority.get(new_info.collection_method, 0)
         if new_prio > existing_prio:
             existing.collection_method = new_info.collection_method
+            
+        print(f"[MERGE] {existing.ip}: result hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
 
     async def remove_machine(self, ip: str):
         """Remove a machine from the registry."""
