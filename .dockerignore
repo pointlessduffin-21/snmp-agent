@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Tests
+tests/
+*.test.py
+pytest_cache/
+.pytest_cache/
+
+# Docs
+docs/
+*.md
+!README.md
+
+# Development
+.env
+.env.local
+*.log
+*.tmp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# System
+*.pid
+*.seed

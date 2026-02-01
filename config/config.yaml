@@ -1,0 +1,82 @@
+# SNMP Agent Server Configuration
+# Copy this file to config/config.yaml and customize as needed
+
+snmp:
+  # Port to listen on (use 161 for standard SNMP, requires root)
+  # Use a high port like 1161 for non-root operation
+  port: 1161
+
+  # SNMPv2c community strings
+  community_read: "public"
+  community_write: "private"
+
+  # SNMPv3 settings (optional)
+  enable_v3: false
+  # v3_username: ""
+  # v3_auth_key: ""
+  # v3_priv_key: ""
+  # v3_auth_protocol: "SHA"  # MD5 or SHA
+  # v3_priv_protocol: "AES"  # DES or AES
+
+  # Custom enterprise OID (replace with your assigned OID)
+  enterprise_oid: "1.3.6.1.4.1.99999"
+
+discovery:
+  # Enable network discovery
+  enabled: true
+
+  # Scan interval in seconds
+  scan_interval_seconds: 300
+
+  # Subnets to scan (CIDR notation)
+  subnets:
+    - "192.168.1.0/24"
+    # - "10.0.0.0/24"
+
+  # Static hosts to always monitor
+  static_hosts: []
+    # - "192.168.1.100"
+    # - "192.168.1.101"
+
+  # Ping timeout in milliseconds
+  ping_timeout_ms: 1000
+
+  # Use ARP table for discovery
+  use_arp_scan: true
+
+  # IPs to exclude from monitoring
+  exclude_ips: []
+
+collection:
+  # Collection interval in seconds
+  interval_seconds: 5
+
+  # Timeout for remote collection
+  timeout_seconds: 30
+
+  # Collect metrics from local machine
+  collect_local: true
+
+  # Collect from remote machines via SNMP
+  collect_remote_snmp: true
+
+  # Remote SNMP community string
+  snmp_community: "public"
+  snmp_port: 161
+
+  # Collect from Linux machines via SSH
+  collect_remote_ssh: false
+  # ssh_username: ""
+  # ssh_key_path: ""
+  # ssh_password: ""  # Not recommended, use key-based auth
+
+logging:
+  level: "INFO"
+  # file_path: "/var/log/snmp-agent.log"
+
+mqtt:
+  enabled: true
+  port: 1883
+  host: "0.0.0.0"
+  publish_metrics: true
+  topic_prefix: "snmp-agent/metrics"

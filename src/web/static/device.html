@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Device Details - SNMP Agent Monitor</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-content">
+          <div class="header-left">
+            <a href="/" class="back-link">← Back to Dashboard</a>
+            <h1 id="device-title">Device Details</h1>
+          </div>
+          <div class="header-right">
+            <div class="header-stats">
+              <div class="stat-item">
+                <span class="stat-label">Status</span>
+                <span id="device-status" class="status-badge online">Online</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Last Update</span>
+                <span id="last-update">Never</span>
+              </div>
+            </div>
+            <div class="header-actions">
+              <button id="btn-refresh" class="btn">🔄 Refresh</button>
+              <button id="btn-mqtt-settings" class="btn">📡 MQTT Settings</button>
+              <button id="btn-browse-oids" class="btn btn-primary">🔍 Browse OIDs</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <div class="device-page">
+        <div class="device-content">
+          <!-- Tab Navigation -->
+          <div class="tab-nav">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="widgets">Custom Widgets</button>
+            <button class="tab-btn" data-tab="mqtt">MQTT Publishing</button>
+          </div>
+
+          <!-- Overview Tab -->
+          <div id="tab-overview" class="tab-content active">
+            <div class="metrics-grid">
+              <!-- System Info -->
+              <div class="info-card">
+                <h3>🖥️ System Information</h3>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">IP Address:</span>
+                    <span id="detail-ip" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Hostname:</span>
+                    <span id="detail-hostname" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">OS:</span>
+                    <span id="detail-os" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Uptime:</span>
+                    <span id="detail-uptime" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Collection Method:</span>
+                    <span id="detail-method" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CPU Metrics -->
+              <div class="info-card">
+                <h3>⚡ CPU Metrics</h3>
+                <div class="metric-bars">
+                  <div class="metric-bar">
+                    <div class="metric-header">
+                      <span>Usage</span>
+                      <span id="cpu-usage-text">-</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div id="cpu-usage-bar" class="progress-fill"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">Model:</span>
+                    <span id="cpu-model" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Cores:</span>
+                    <span id="cpu-cores" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Frequency:</span>
+                    <span id="cpu-freq" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Temperature:</span>
+                    <span id="cpu-temp" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Memory Metrics -->
+              <div class="info-card">
+                <h3>🧠 Memory Metrics</h3>
+                <div class="metric-bars">
+                  <div class="metric-bar">
+                    <div class="metric-header">
+                      <span>RAM Usage</span>
+                      <span id="mem-usage-text">-</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div id="mem-usage-bar" class="progress-fill"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">Total:</span>
+                    <span id="mem-total" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Used:</span>
+                    <span id="mem-used" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Available:</span>
+                    <span id="mem-available" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Storage Devices -->
+              <div class="info-card full-width">
+                <h3>💾 Storage Devices</h3>
+                <div id="storage-list" class="storage-list">
+                  <!-- Storage devices will be inserted here -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Custom Widgets Tab -->
+          <div id="tab-widgets" class="tab-content">
+            <div class="widgets-header">
+              <h3>Custom OID Widgets</h3>
+              <p class="hint">Add custom widgets from the OID Browser to monitor specific metrics.</p>
+            </div>
+            <div id="widgets-grid" class="widgets-grid">
+              <!-- Custom widgets will be inserted here -->
+              <div class="widget-placeholder">
+                <span>No custom widgets yet</span>
+                <button id="btn-add-widget" class="btn btn-small">+ Add Widget from OID Browser</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- MQTT Publishing Tab -->
+          <div id="tab-mqtt" class="tab-content">
+            <div class="mqtt-config">
+              <h3>📡 MQTT Publishing Settings</h3>
+              <div class="mqtt-status-card">
+                <div class="mqtt-status-header">
+                  <span>Publishing Status:</span>
+                  <span id="mqtt-device-status" class="status-badge">Disabled</span>
+                </div>
+                <div class="mqtt-toggle">
+                  <label class="switch">
+                    <input type="checkbox" id="mqtt-enabled" />
+                    <span class="slider"></span>
+                  </label>
+                  <span>Enable MQTT publishing for this device</span>
+                </div>
+              </div>
+
+              <div class="mqtt-options">
+                <h4>Topic Configuration</h4>
+                <div class="form-group">
+                  <label>Topic Prefix:</label>
+                  <input type="text" id="mqtt-topic" class="input-field" placeholder="snmp-agent/devices/{ip}" />
+                </div>
+
+                <h4>Published Metrics</h4>
+                <div class="checkbox-group">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="mqtt-pub-cpu" checked /> CPU Metrics
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="mqtt-pub-memory" checked /> Memory Metrics
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="mqtt-pub-storage" checked /> Storage Metrics
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="mqtt-pub-widgets" checked /> Custom Widget OIDs
+                  </label>
+                </div>
+
+                <button id="btn-save-mqtt" class="btn btn-primary">💾 Save MQTT Settings</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OID Browser Modal -->
+    <div id="oid-browser-modal" class="modal">
+      <div class="modal-content modal-large">
+        <div class="modal-header">
+          <h2>🔍 OID Browser</h2>
+          <button id="btn-close-oid-browser" class="btn-close">✕</button>
+        </div>
+        <div class="modal-body oid-browser-body">
+          <div class="oid-categories">
+            <h3>MIB Categories</h3>
+            <div id="oid-category-list" class="category-list">
+              <div class="loading">Loading categories...</div>
+            </div>
+            <div class="oid-actions">
+              <button id="btn-scan-all-oids" class="btn btn-primary">🔍 Scan All OIDs</button>
+            </div>
+          </div>
+          <div class="oid-results-panel">
+            <div class="oid-browser-controls">
+              <div class="oid-input-group">
+                <input type="text" id="oid-input" class="input-field" placeholder="Enter OID (e.g., 1.3.6.1.2.1.1)" />
+                <button id="btn-get-oid" class="btn">Get Value</button>
+                <button id="btn-walk-oid" class="btn btn-primary">Walk Subtree</button>
+              </div>
+              <div class="oid-presets">
+                <span>Quick presets:</span>
+                <button class="btn btn-small oid-preset" data-oid="1.3.6.1.2.1.1">System</button>
+                <button class="btn btn-small oid-preset" data-oid="1.3.6.1.2.1.2">Interfaces</button>
+                <button class="btn btn-small oid-preset" data-oid="1.3.6.1.2.1.25">Host Resources</button>
+                <button class="btn btn-small oid-preset" data-oid="1.3.6.1.4.1">Enterprise</button>
+              </div>
+            </div>
+            <div class="oid-results-header">
+              <h3>Discovered OIDs <span id="oid-count"></span></h3>
+              <input type="text" id="oid-search" class="input-field" placeholder="Filter results..." style="width: 200px;" />
+            </div>
+            <div id="oid-results" class="oid-results">
+              <div class="oid-placeholder">Select categories and click "Scan All OIDs" or enter an OID above</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/device.js"></script>
+  </body>
+</html>

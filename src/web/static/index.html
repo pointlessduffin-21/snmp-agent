@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SNMP Agent Monitor</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-content">
+          <h1>🖥️ SNMP Agent Monitor</h1>
+          <div class="header-stats">
+            <div class="stat-item">
+              <span class="stat-label">Devices</span>
+              <span id="stat-devices" class="stat-value">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Online</span>
+              <span id="stat-online" class="stat-value">0</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Avg CPU</span>
+              <span id="stat-cpu" class="stat-value">0%</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+          <div class="sidebar-section">
+            <h3>Actions</h3>
+            <button id="btn-scan" class="btn btn-primary">
+              🔍 Scan Network
+            </button>
+            <button id="btn-refresh" class="btn btn-secondary">
+              🔄 Refresh Data
+            </button>
+            <button id="btn-config" class="btn btn-secondary">
+              ⚙️ Configuration
+            </button>
+          </div>
+
+          <div class="sidebar-section">
+            <h3>Quick Scan</h3>
+            <input
+              type="text"
+              id="subnet-input"
+              placeholder="192.168.0.0/24"
+              class="input-field"
+            />
+            <button id="btn-quick-scan" class="btn btn-block">
+              Scan Subnet
+            </button>
+          </div>
+
+          <div class="sidebar-section">
+            <h3>Filters</h3>
+            <label class="checkbox-label">
+              <input type="checkbox" id="filter-online" checked /> Online Only
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="filter-offline" checked /> Offline
+            </label>
+          </div>
+
+          <div class="sidebar-section status-indicator">
+            <h3>Status</h3>
+            <div id="connection-status" class="status online">
+              <span class="status-dot"></span>
+              <span>Connected</span>
+            </div>
+            <div class="status-text" id="last-update">Last update: Never</div>
+          </div>
+
+          <div class="sidebar-section">
+            <h3>🔌 MQTT Broker</h3>
+            <div id="mqtt-status-panel">
+              <div class="mqtt-info">
+                <span class="mqtt-label">Status:</span>
+                <span id="mqtt-status" class="status-badge">Loading...</span>
+              </div>
+              <div class="mqtt-info">
+                <span class="mqtt-label">Port:</span>
+                <span id="mqtt-port">-</span>
+              </div>
+              <div class="mqtt-info">
+                <span class="mqtt-label">Clients:</span>
+                <span id="mqtt-clients">0</span>
+              </div>
+              <button id="btn-mqtt-manager" class="btn btn-small btn-block">📋 Manage Devices</button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Device List & Details -->
+        <div class="content-area">
+          <!-- Device Grid -->
+          <div class="section">
+            <h2>Discovered Devices</h2>
+            <div id="device-grid" class="device-grid">
+              <!-- Devices will be inserted here -->
+            </div>
+          </div>
+
+          <!-- Device Details -->
+          <div id="device-details" class="section" style="display: none">
+            <div class="details-header">
+              <h2 id="details-title">Device Details</h2>
+              <button id="btn-close-details" class="btn btn-small">
+                ✕ Close
+              </button>
+            </div>
+
+            <div class="details-content">
+              <!-- System Info -->
+              <div class="info-card">
+                <h3>System Information</h3>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">IP Address:</span>
+                    <span id="detail-ip" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Hostname:</span>
+                    <span id="detail-hostname" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">OS:</span>
+                    <span id="detail-os" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Uptime:</span>
+                    <span id="detail-uptime" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CPU Metrics -->
+              <div class="info-card">
+                <h3>CPU Metrics</h3>
+                <div class="metric-bars">
+                  <div class="metric-bar">
+                    <div class="metric-header">
+                      <span>Usage</span>
+                      <span id="cpu-usage-text">-</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div id="cpu-usage-bar" class="progress-fill"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">Model:</span>
+                    <span id="cpu-model" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Cores:</span>
+                    <span id="cpu-cores" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Frequency:</span>
+                    <span id="cpu-freq" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Temperature:</span>
+                    <span id="cpu-temp" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Memory Metrics -->
+              <div class="info-card">
+                <h3>Memory Metrics</h3>
+                <div class="metric-bars">
+                  <div class="metric-bar">
+                    <div class="metric-header">
+                      <span>RAM Usage</span>
+                      <span id="mem-usage-text">-</span>
+                    </div>
+                    <div class="progress-bar">
+                      <div id="mem-usage-bar" class="progress-fill"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="info-grid">
+                  <div class="info-item">
+                    <span class="label">Total:</span>
+                    <span id="mem-total" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Used:</span>
+                    <span id="mem-used" class="value">-</span>
+                  </div>
+                  <div class="info-item">
+                    <span class="label">Available:</span>
+                    <span id="mem-available" class="value">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Storage Devices -->
+              <div class="info-card">
+                <h3>Storage Devices</h3>
+                <div id="storage-list" class="storage-list">
+                  <!-- Storage devices will be inserted here -->
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="info-card">
+                <h3>Device Actions</h3>
+                <button id="btn-browse-oids" class="btn btn-browse-oids">
+                  🔍 Browse Available OIDs
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configuration Modal -->
+    <div id="config-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Configuration</h2>
+          <button id="btn-close-config" class="btn btn-small">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>SNMP Community String</label>
+            <input type="text" id="config-community" class="input-field" />
+          </div>
+          <div class="form-group">
+            <label>Collection Interval</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="number" id="config-interval" class="input-field" style="flex: 2;" min="1" />
+              <select id="config-interval-unit" class="input-field" style="flex: 1;">
+                <option value="1">Seconds</option>
+                <option value="60">Minutes</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="config-discovery" />
+              Enable Auto-Discovery
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="config-snmp" />
+              Collect via SNMP
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-save-config" class="btn btn-primary">Save</button>
+          <button id="btn-cancel-config" class="btn btn-secondary">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MQTT Manager Modal -->
+    <div id="mqtt-manager-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>📡 MQTT Device Manager</h2>
+          <button id="btn-close-mqtt-manager" class="btn-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="hint">Select which devices should publish metrics to MQTT.</p>
+          <div id="mqtt-device-list" class="mqtt-device-list">
+            <!-- Device checkboxes will be inserted here -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btn-save-mqtt-devices" class="btn btn-primary">Save Changes</button>
+          <button id="btn-cancel-mqtt-manager" class="btn btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

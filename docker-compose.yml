@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  snmp-agent:
+    build: .
+    container_name: snmp-agent-monitor
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./config:/app/config:ro
+      - snmp-data:/app/data
+    environment:
+      - MQTT_ENABLED=true
+      - DISCOVERY_SUBNETS=192.168.0.0/24
+      - LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  snmp-data:
