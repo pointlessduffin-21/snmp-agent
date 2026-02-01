@@ -57,59 +57,53 @@ class DataManager:
         """Add or update a machine in the registry, merging with existing data."""
         async with self._lock:
             if machine.ip in self._machines:
-                # Merge: preserve existing fields that new data doesn't have
                 existing = self._machines[machine.ip]
-                print(f"[MERGE] {machine.ip}: existing hostname={existing.hostname}, snmp_active={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
-                print(f"[MERGE] {machine.ip}: new hostname={machine.hostname}, snmp_active={getattr(machine, 'snmp_active', False)}, method={machine.collection_method}")
-                
-                # Update existing with new values only if new values are meaningful
-                if machine.hostname and machine.hostname != 'unknown' and machine.hostname != machine.ip:
-                    existing.hostname = machine.hostname
-                if machine.os_type and machine.os_type != 'unknown':
-                    existing.os_type = machine.os_type
-                if machine.os_version:
-                    existing.os_version = machine.os_version
-                if machine.uptime_seconds > 0:
-                    existing.uptime_seconds = machine.uptime_seconds
-                if machine.mac_address:
-                    existing.mac_address = machine.mac_address
-                if machine.vendor and machine.vendor != 'Unknown':
-                    existing.vendor = machine.vendor
-                if hasattr(machine, 'dns_name') and machine.dns_name:
-                    existing.dns_name = machine.dns_name
-                if hasattr(machine, 'mdns_name') and machine.mdns_name:
-                    existing.mdns_name = machine.mdns_name
-                if hasattr(machine, 'netbios_name') and machine.netbios_name:
-                    existing.netbios_name = machine.netbios_name
-                if hasattr(machine, 'sys_descr') and machine.sys_descr:
-                    existing.sys_descr = machine.sys_descr
-                if machine.is_online:
-                    existing.is_online = True
-                existing.last_seen = machine.last_seen
-                
-                # Preserve snmp_active if already set
-                if hasattr(existing, 'snmp_active') and existing.snmp_active:
-                    # Keep snmp_active=True
-                    pass
-                elif hasattr(machine, 'snmp_active') and machine.snmp_active:
-                    existing.snmp_active = True
-                
-                # Preserve snmp_sysname
-                if hasattr(machine, 'snmp_sysname') and machine.snmp_sysname:
-                    existing.snmp_sysname = machine.snmp_sysname
-                
-                # Only update collection_method if new method is "better" (snmp/ssh > local > arp)
-                method_priority = {'snmp': 4, 'ssh': 3, 'local': 2, 'arp': 1}
-                existing_priority = method_priority.get(existing.collection_method, 0)
-                new_priority = method_priority.get(machine.collection_method, 0)
-                if new_priority > existing_priority:
-                    existing.collection_method = machine.collection_method
-                
-                print(f"[MERGE] {machine.ip}: result hostname={existing.hostname}, snmp_active={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
+                # Merge data into existing
+                self._merge_machines(existing, machine)
             else:
                 self._machines[machine.ip] = machine
                 print(f"[ADD] {machine.ip}: hostname={machine.hostname}, method={machine.collection_method}")
-    
+
+    def _merge_machines(self, existing: MachineInfo, new_info: MachineInfo):
+        """Internal helper to merge machine info."""
+        if new_info.hostname and new_info.hostname != 'unknown' and new_info.hostname != new_info.ip:
+            existing.hostname = new_info.hostname
+        if new_info.os_type and new_info.os_type != 'unknown':
+            existing.os_type = new_info.os_type
+        if new_info.os_version:
+            existing.os_version = new_info.os_version
+        if new_info.uptime_seconds > 0:
+            existing.uptime_seconds = new_info.uptime_seconds
+        if new_info.mac_address:
+            existing.mac_address = new_info.mac_address
+        if new_info.vendor and new_info.vendor != 'Unknown':
+            existing.vendor = new_info.vendor
+            
+        # Extended fields
+        for field in ['dns_name', 'mdns_name', 'netbios_name', 'snmp_sysname', 'sys_descr']:
+            if hasattr(new_info, field) and getattr(new_info, field):
+                setattr(existing, field, getattr(new_info, field))
+            elif hasattr(existing, field) and not getattr(existing, field):
+                # Ensure fields exist on existing even if empty
+                setattr(existing, field, getattr(existing, field, ""))
+
+        if new_info.is_online:
+            existing.is_online = True
+        existing.last_seen = new_info.last_seen
+        
+        # Preserve snmp_active
+        if hasattr(new_info, 'snmp_active') and new_info.snmp_active:
+            existing.snmp_active = True
+        elif not hasattr(existing, 'snmp_active'):
+            existing.snmp_active = False
+            
+        # Method priority
+        method_priority = {'snmp': 4, 'ssh': 3, 'local': 2, 'arp': 1}
+        existing_prio = method_priority.get(existing.collection_method, 0)
+        new_prio = method_priority.get(new_info.collection_method, 0)
+        if new_prio > existing_prio:
+            existing.collection_method = new_info.collection_method
+
     async def remove_machine(self, ip: str):
         """Remove a machine from the registry."""
         async with self._lock:
@@ -124,21 +118,16 @@ class DataManager:
         async with self._lock:
             ip = snapshot.machine.ip
             
-            # Preserve existing machine metadata if available
             if ip in self._machines:
                 existing = self._machines[ip]
-                machine = snapshot.machine
-                
-                # Merge: keep discovery data, update with new collector data
-                machine.mac_address = machine.mac_address or existing.mac_address
-                machine.vendor = machine.vendor if machine.vendor and machine.vendor != 'Unknown' else existing.vendor
-                machine.hostname = machine.hostname if machine.hostname and machine.hostname != 'unknown' else existing.hostname
-                machine.dns_name = getattr(machine, 'dns_name', '') or getattr(existing, 'dns_name', '')
-                machine.mdns_name = getattr(machine, 'mdns_name', '') or getattr(existing, 'mdns_name', '')
-                machine.netbios_name = getattr(machine, 'netbios_name', '') or getattr(existing, 'netbios_name', '')
+                # Merge new info from snapshot into existing machine object
+                self._merge_machines(existing, snapshot.machine)
+                # Point snapshot at our authoritative machine object
+                snapshot.machine = existing
+            else:
+                self._machines[ip] = snapshot.machine
             
             self._snapshots[ip] = snapshot
-            self._machines[ip] = snapshot.machine
             logger.debug(f"Updated snapshot for {ip}")
     
     async def update_snapshots(self, snapshots: List[HardwareSnapshot]):
@@ -146,8 +135,13 @@ class DataManager:
         async with self._lock:
             for snapshot in snapshots:
                 ip = snapshot.machine.ip
+                if ip in self._machines:
+                    existing = self._machines[ip]
+                    self._merge_machines(existing, snapshot.machine)
+                    snapshot.machine = existing
+                else:
+                    self._machines[ip] = snapshot.machine
                 self._snapshots[ip] = snapshot
-                self._machines[ip] = snapshot.machine
             logger.info(f"Updated {len(snapshots)} snapshots")
     
     def get_machines_by_status(self, online: bool = True) -> List[MachineInfo]:
