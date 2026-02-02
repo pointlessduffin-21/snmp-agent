@@ -205,7 +205,17 @@
                   </label>
                 </div>
 
-                <button id="btn-save-mqtt" class="btn btn-primary">💾 Save MQTT Settings</button>
+                <h4>Custom OIDs for MQTT Broadcasting</h4>
+                <p class="hint">Select specific OIDs to publish to MQTT topics automatically.</p>
+                <div id="mqtt-oid-list" class="mqtt-oid-list">
+                  <!-- Custom OIDs will be listed here -->
+                  <div class="mqtt-oid-placeholder">No custom OIDs configured. Click below to add.</div>
+                </div>
+                <button id="btn-add-mqtt-oid" class="btn btn-small">+ Add OID from Browser</button>
+
+                <div style="margin-top: 20px;">
+                  <button id="btn-save-mqtt" class="btn btn-primary">💾 Save MQTT Settings</button>
+                </div>
               </div>
             </div>
           </div>

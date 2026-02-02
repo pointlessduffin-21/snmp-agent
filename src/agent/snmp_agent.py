@@ -190,6 +190,11 @@ class SNMPAgentServer:
                 self._build_storage_entries(idx, snapshot)
                 self._build_power_entry(idx, snapshot)
                 self._build_network_entries(idx, snapshot)
+                
+                # Custom/Rebroadcast OIDs
+                if hasattr(snapshot, 'custom_metrics') and snapshot.custom_metrics:
+                    for oid, value in snapshot.custom_metrics.items():
+                        self._set_oid(oid, value)
     
     def _set_oid(self, oid: str, value: Any):
         """Set an OID value in the cache."""

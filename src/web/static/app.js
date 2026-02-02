@@ -273,9 +273,9 @@ class SNMPMonitor {
             });
             
             if (response.ok) {
-                this.showSuccess('Scan started for ' + subnet);
-                // Refresh after 10 seconds to show new devices
-                setTimeout(() => this.loadDevices(), 10000);
+                this.showSuccess('Scan started for ' + subnet + '. Page will reload in 3 seconds...');
+                // Reload page after 3 seconds to show new devices
+                setTimeout(() => window.location.reload(), 3000);
             }
         } catch (error) {
             console.error('Scan failed:', error);

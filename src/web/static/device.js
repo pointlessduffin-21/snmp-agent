@@ -61,6 +61,10 @@ class DeviceMonitor {
             document.getElementById('mqtt-device-status').textContent = e.target.checked ? 'Enabled' : 'Disabled';
             document.getElementById('mqtt-device-status').className = 'status-badge ' + (e.target.checked ? 'online' : 'offline');
         });
+        document.getElementById('btn-add-mqtt-oid')?.addEventListener('click', () => {
+            this.oidBrowserSource = 'mqtt';
+            this.openOidBrowser();
+        });
     }
 
     switchTab(tabName) {
@@ -286,6 +290,83 @@ class DeviceMonitor {
         const status = document.getElementById('mqtt-device-status');
         status.textContent = this.mqttConfig.enabled ? 'Enabled' : 'Disabled';
         status.className = 'status-badge ' + (this.mqttConfig.enabled ? 'online' : 'offline');
+        
+        this.renderMqttOidList();
+    }
+
+    renderMqttOidList() {
+        const list = document.getElementById('mqtt-oid-list');
+        const customOids = this.mqttConfig.custom_oids || [];
+        
+        if (customOids.length === 0) {
+            list.innerHTML = '<div class="mqtt-oid-placeholder">No custom OIDs configured. Click below to add.</div>';
+            return;
+        }
+        
+        list.innerHTML = customOids.map((oid, index) => `
+            <div class="mqtt-oid-item">
+                <div class="mqtt-oid-info">
+                    <span class="mqtt-oid-name">${oid.name}</span>
+                    <code class="mqtt-oid-code">${oid.oid}</code>
+                </div>
+                <div class="mqtt-oid-rebroadcast">
+                    <label title="Rebroadcast via local SNMP agent">
+                        <input type="checkbox" 
+                               onchange="monitor.updateMqttOid(${index}, 'snmp_rebroadcast', this.checked)"
+                               ${oid.snmp_rebroadcast ? 'checked' : ''}>
+                        Rebroadcast
+                    </label>
+                    ${oid.snmp_rebroadcast ? `
+                        <input type="text" 
+                               class="mqtt-oid-rebroadcast-input" 
+                               placeholder="Target OID (e.g. 1.3.6.1.4.1.99.1)"
+                               value="${oid.rebroadcast_oid || ''}"
+                               onchange="monitor.updateMqttOid(${index}, 'rebroadcast_oid', this.value)">
+                    ` : ''}
+                </div>
+                <button class="btn-icon" onclick="monitor.removeMqttOid(${index})">🗑️</button>
+            </div>
+        `).join('');
+    }
+
+    addMqttOid(oid, name) {
+        if (!this.mqttConfig.custom_oids) {
+            this.mqttConfig.custom_oids = [];
+        }
+        
+        // Check for duplicates
+        if (this.mqttConfig.custom_oids.some(o => o.oid === oid)) {
+            this.showToast('OID already added to MQTT config', 'warning');
+            return;
+        }
+        
+        this.mqttConfig.custom_oids.push({
+            oid: oid,
+            name: name,
+            topic_suffix: '',
+            interval_seconds: 10,
+            snmp_rebroadcast: false,
+            rebroadcast_oid: ''
+        });
+        
+        this.renderMqttOidList();
+        this.showSuccess('OID added to MQTT list (unsaved)');
+    }
+
+    updateMqttOid(index, field, value) {
+        if (this.mqttConfig.custom_oids && this.mqttConfig.custom_oids[index]) {
+            this.mqttConfig.custom_oids[index][field] = value;
+            if (field === 'snmp_rebroadcast') {
+                this.renderMqttOidList(); // Re-render to show/hide input
+            }
+        }
+    }
+
+    removeMqttOid(index) {
+        if (this.mqttConfig.custom_oids) {
+            this.mqttConfig.custom_oids.splice(index, 1);
+            this.renderMqttOidList();
+        }
     }
 
     async saveMqttConfig() {
@@ -296,7 +377,9 @@ class DeviceMonitor {
             publish_cpu: document.getElementById('mqtt-pub-cpu').checked,
             publish_memory: document.getElementById('mqtt-pub-memory').checked,
             publish_storage: document.getElementById('mqtt-pub-storage').checked,
-            publish_widgets: document.getElementById('mqtt-pub-widgets').checked
+            publish_storage: document.getElementById('mqtt-pub-storage').checked,
+            publish_widgets: document.getElementById('mqtt-pub-widgets').checked,
+            custom_oids: this.mqttConfig.custom_oids || []
         };
         
         try {
@@ -317,12 +400,14 @@ class DeviceMonitor {
 
     // OID Browser
     openOidBrowser() {
+        if (!this.oidBrowserSource) this.oidBrowserSource = 'widget'; // Default source
         document.getElementById('oid-browser-modal').classList.add('show');
         this.loadOidCategories();
     }
 
     closeOidBrowser() {
         document.getElementById('oid-browser-modal').classList.remove('show');
+        this.oidBrowserSource = null;
     }
 
     async loadOidCategories() {
@@ -359,10 +444,25 @@ class DeviceMonitor {
         }
         
         const resultsDiv = document.getElementById('oid-results');
-        resultsDiv.innerHTML = '<div class="loading">🔍 Scanning all OIDs...</div>';
+        resultsDiv.innerHTML = '<div class="loading">🔍 Starting scan...</div>';
         document.getElementById('oid-count').textContent = '';
         
         try {
+            // Start polling for progress
+            const progressInterval = setInterval(async () => {
+                try {
+                    const progressRes = await fetch(`/api/devices/${this.deviceIp}/oids/scan/progress`);
+                    if (progressRes.ok) {
+                        const progress = await progressRes.json();
+                        if (progress.status === 'scanning') {
+                            resultsDiv.innerHTML = `<div class="loading">🔍 ${progress.message} (${progress.percent}%)</div>`;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore polling errors
+                }
+            }, 500);
+
             const response = await fetch(`/api/devices/${this.deviceIp}/oids/scan`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -371,6 +471,8 @@ class DeviceMonitor {
                     max_results: 500
                 })
             });
+            
+            clearInterval(progressInterval);
             
             const data = await response.json();
             this.currentOidData = data;
@@ -404,7 +506,10 @@ class DeviceMonitor {
                             <div class="oid-item" data-oid="${oid.oid}">
                                 <div class="oid-item-header">
                                     <span class="oid-name">${oid.name}</span>
-                                    <button class="btn btn-small" onclick="monitor.promptAddWidget('${oid.oid}')">+ Widget</button>
+                                    ${this.oidBrowserSource === 'mqtt' 
+                                        ? `<button class="btn btn-small" onclick="monitor.promptAddMqttOid('${oid.oid}', '${oid.name}')">+ MQTT</button>`
+                                        : `<button class="btn btn-small" onclick="monitor.promptAddWidget('${oid.oid}')">+ Widget</button>`
+                                    }
                                 </div>
                                 <div class="oid-item-details">
                                     <code class="oid-string" onclick="navigator.clipboard.writeText('${oid.oid}');monitor.showSuccess('Copied!')">${oid.oid}</code>
@@ -485,7 +590,10 @@ class DeviceMonitor {
             <div class="oid-result-item">
                 <div class="oid-result-header">
                     <code>${oid}</code>
-                    <button class="btn btn-small" onclick="monitor.promptAddWidget('${oid}')">+ Add as Widget</button>
+                    ${this.oidBrowserSource === 'mqtt' 
+                        ? `<button class="btn btn-small" onclick="monitor.promptAddMqttOid('${oid}', '')">+ MQTT</button>`
+                        : `<button class="btn btn-small" onclick="monitor.promptAddWidget('${oid}')">+ Add as Widget</button>`
+                    }
                 </div>
                 <div class="oid-result-value">${data.value || 'No value'}</div>
             </div>
@@ -501,7 +609,10 @@ class DeviceMonitor {
             <div class="oid-result-item">
                 <div class="oid-result-header">
                     <code>${r.oid}</code>
-                    <button class="btn btn-small" onclick="monitor.promptAddWidget('${r.oid}')">+ Add as Widget</button>
+                    ${this.oidBrowserSource === 'mqtt' 
+                        ? `<button class="btn btn-small" onclick="monitor.promptAddMqttOid('${r.oid}', '${r.name}')">+ MQTT</button>`
+                        : `<button class="btn btn-small" onclick="monitor.promptAddWidget('${r.oid}')">+ Add as Widget</button>`
+                    }
                 </div>
                 <div class="oid-result-value">${r.value}</div>
             </div>
@@ -513,6 +624,15 @@ class DeviceMonitor {
         if (name) {
             this.addWidget(oid, name);
             this.closeOidBrowser();
+        }
+    }
+
+    promptAddMqttOid(oid, defaultName) {
+        const name = prompt('Enter name for MQTT metric:', defaultName || `OID ${oid}`);
+        if (name) {
+            this.addMqttOid(oid, name);
+            this.closeOidBrowser();
+            this.switchTab('mqtt');
         }
     }
 

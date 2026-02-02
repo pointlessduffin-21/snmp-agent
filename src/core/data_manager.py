@@ -8,7 +8,7 @@ the current state of all monitored machines.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from concurrent.futures import ThreadPoolExecutor
 
 from .models import HardwareSnapshot, MachineInfo
@@ -146,6 +146,20 @@ class DataManager:
                     self._machines[ip] = snapshot.machine
                 self._snapshots[ip] = snapshot
             logger.info(f"Updated {len(snapshots)} snapshots")
+
+    async def update_custom_metric(self, ip: str, oid: str, value: Any):
+        """Update a custom metric for a machine."""
+        async with self._lock:
+            if ip in self._snapshots:
+                snapshot = self._snapshots[ip]
+                # Ensure custom_metrics dict exists (for backward compatibility if pickle loaded old obj)
+                if not hasattr(snapshot, 'custom_metrics'):
+                    snapshot.custom_metrics = {}
+                
+                snapshot.custom_metrics[oid] = value
+                logger.debug(f"Updated custom metric for {ip}: {oid}={value}")
+            else:
+                logger.warning(f"Cannot update custom metric for unknown machine: {ip}")
     
     def get_machines_by_status(self, online: bool = True) -> List[MachineInfo]:
         """Get machines filtered by online status."""

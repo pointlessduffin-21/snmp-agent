@@ -74,7 +74,7 @@ class MQTTConfig:
     
     enabled: bool = False
     port: int = 1883
-    host: str = "0.0.0.0"
+    host: str = "mqtt"
     websocket_port: int = 9001
     publish_metrics: bool = True
     topic_prefix: str = "snmp-agent/metrics"
