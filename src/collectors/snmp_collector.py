@@ -23,8 +23,10 @@ try:
         ObjectType,
         ObjectIdentity,
     )
-except (ImportError, AttributeError):
+except ImportError as e:
     # Fallback to v3arch path if available
+    import logging
+    logging.debug(f"Failed to import from pysnmp.hlapi.asyncio: {e}, trying v3arch path")
     from pysnmp.hlapi.v3arch.asyncio import (
         get_cmd as getCmd,
         bulk_cmd as bulkCmd,

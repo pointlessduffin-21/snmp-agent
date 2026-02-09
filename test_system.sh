@@ -40,8 +40,8 @@ cleanup() {
     echo ""
     echo "Cleaning up..."
     # Kill specific PIDs if they exist
-    [ ! -z "$SNMP_PID" ] && kill $SNMP_PID 2>/dev/null || true
-    [ ! -z "$WEB_PID" ] && kill $WEB_PID 2>/dev/null || true
+    [ -n "$SNMP_PID" ] && kill $SNMP_PID 2>/dev/null || true
+    [ -n "$WEB_PID" ] && kill $WEB_PID 2>/dev/null || true
     docker compose down >/dev/null 2>&1 || true
     docker stop snmp-agent-test >/dev/null 2>&1 || true
     docker rm snmp-agent-test >/dev/null 2>&1 || true
