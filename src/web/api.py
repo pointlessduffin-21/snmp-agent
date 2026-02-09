@@ -149,7 +149,18 @@ async def lifespan(app: FastAPI):
         config = Config()
     
     # Initialize Core Services
-    db_manager = DatabaseManager(db_path="/app/data/snmp_agent.db")
+    # Use environment variable to allow explicit DB path configuration
+    # Falls back to auto-detection based on typical Docker path
+    import os
+    db_path = os.environ.get('DB_PATH')
+    if db_path is None:
+        # Auto-detect: /app is standard Docker working directory
+        if os.path.exists('/app'):
+            db_path = "/app/data/snmp_agent.db"
+        else:
+            db_path = "data/snmp_agent.db"
+    
+    db_manager = DatabaseManager(db_path=db_path)
     data_manager = DataManager(config)
     
     # Load Configurations from DB

@@ -14,3 +14,7 @@ build/
 *.swp
 *.swo
 docker-compose.override.yml
+data/
+*.db
+mosquitto/data/
+mosquitto/log/

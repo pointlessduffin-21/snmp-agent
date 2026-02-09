@@ -11,11 +11,11 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 try:
-    # pysnmp-lextudio v6+
-    from pysnmp.hlapi.v3arch.asyncio import (
-        get_cmd as getCmd,
-        bulk_cmd as bulkCmd,
-        walk_cmd as nextCmd,
+    # Try pysnmp-lextudio v6+ without v3arch first
+    from pysnmp.hlapi.asyncio import (
+        getCmd,
+        bulkCmd,
+        nextCmd,
         SnmpEngine,
         CommunityData,
         UdpTransportTarget,
@@ -23,12 +23,14 @@ try:
         ObjectType,
         ObjectIdentity,
     )
-except ImportError:
-    # Fallback for older pysnmp
-    from pysnmp.hlapi.asyncio import (
-        getCmd,
-        bulkCmd,
-        nextCmd,
+except ImportError as e:
+    # Fallback to v3arch path if available
+    import logging
+    logging.debug(f"Failed to import from pysnmp.hlapi.asyncio: {e}, trying v3arch path")
+    from pysnmp.hlapi.v3arch.asyncio import (
+        get_cmd as getCmd,
+        bulk_cmd as bulkCmd,
+        walk_cmd as nextCmd,
         SnmpEngine,
         CommunityData,
         UdpTransportTarget,
