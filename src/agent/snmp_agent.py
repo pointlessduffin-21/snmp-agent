@@ -11,13 +11,24 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 
-from pysnmp.hlapi.v3arch.asyncio import (
-    SnmpEngine,
-    CommunityData,
-    UsmUserData,
-    UdpTransportTarget,
-    ContextData,
-)
+try:
+    # pysnmp-lextudio v6+ (with v3arch)
+    from pysnmp.hlapi.v3arch.asyncio import (
+        SnmpEngine,
+        CommunityData,
+        UsmUserData,
+        UdpTransportTarget,
+        ContextData,
+    )
+except ImportError:
+    # pysnmp-lextudio v6+ (without v3arch) or older pysnmp
+    from pysnmp.hlapi.asyncio import (
+        SnmpEngine,
+        CommunityData,
+        UsmUserData,
+        UdpTransportTarget,
+        ContextData,
+    )
 from pysnmp.smi import builder, view, compiler
 from pysnmp.proto import rfc1902
 from pysnmp.carrier.asyncio.dgram import udp

@@ -149,7 +149,14 @@ async def lifespan(app: FastAPI):
         config = Config()
     
     # Initialize Core Services
-    db_manager = DatabaseManager(db_path="/app/data/snmp_agent.db")
+    # Use relative path for database, or /app/data if in Docker
+    import os
+    if os.path.exists('/app'):
+        db_path = "/app/data/snmp_agent.db"
+    else:
+        db_path = "data/snmp_agent.db"
+    
+    db_manager = DatabaseManager(db_path=db_path)
     data_manager = DataManager(config)
     
     # Load Configurations from DB
