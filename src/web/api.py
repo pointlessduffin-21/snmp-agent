@@ -25,41 +25,37 @@ import json
 from ..core.models import HardwareSnapshot
 from ..core.config import Config
 from ..core.data_manager import DataManager
+from ..core.database import DatabaseManager
 from ..core.hostname_resolver import get_vendor_from_mac
 from ..discovery.network_scanner import NetworkScanner
 from ..collectors.local_collector import LocalCollector
 from ..collectors.snmp_collector import SNMPCollector
 from ..collectors.ssh_collector import SSHCollector
 from ..services.mqtt_broker import MQTTBrokerService
+from ..agent.snmp_agent import SimpleSNMPAgent
 
 
 logger = logging.getLogger(__name__)
 
 # Global state (will be initialized in lifespan)
-# Global state (will be initialized in lifespan)
-from src.core.database import DatabaseManager
-
 data_manager: Optional[DataManager] = None
-db_manager: Optional[DatabaseManager] = None
-
 scanner: Optional[NetworkScanner] = None
 local_collector: Optional[LocalCollector] = None
 snmp_collector: Optional[SNMPCollector] = None
 ssh_collector: Optional[SSHCollector] = None
 mqtt_service: Optional[MQTTBrokerService] = None
+snmp_agent: Optional[SimpleSNMPAgent] = None
+db: Optional[DatabaseManager] = None
 config: Optional[Config] = None
 
 # Background tasks
 _discovery_task: Optional[asyncio.Task] = None
 _collection_task: Optional[asyncio.Task] = None
-_mqtt_oid_task: Optional[asyncio.Task] = None
 _running = False
 
 # Widget and MQTT device configuration storage
-# Load from DB on startup (in lifespan)
-_widgets: Dict[str, Dict] = {}
-_mqtt_device_configs: Dict[str, Dict] = {}
-_scan_progress: Dict[str, Dict] = {}  # device_ip -> progress info
+_widgets: Dict[str, Dict] = {}  # widget_id -> widget config
+_mqtt_device_configs: Dict[str, Dict] = {}  # device_ip -> mqtt config
 
 
 # Pydantic models for API
@@ -137,26 +133,24 @@ class ConfigUpdate(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global data_manager, db_manager, scanner, local_collector, snmp_collector, ssh_collector, mqtt_service, config
+    global data_manager, scanner, local_collector, snmp_collector, ssh_collector
+    global mqtt_service, snmp_agent, db, config
     global _discovery_task, _collection_task, _running
-    global _widgets, _mqtt_device_configs
-    
+
     # Startup
     logger.info("Starting web server...")
-    
+
     # Initialize with default config if not set
     if config is None:
-        config = Config()
-    
-    # Initialize Core Services
-    db_manager = DatabaseManager(db_path="/app/data/snmp_agent.db")
+        from ..core.config import get_default_config_path
+        config_path = get_default_config_path()
+        if config_path:
+            logger.info(f"Loading configuration from {config_path}")
+            config = Config.from_yaml(config_path)
+        else:
+            config = Config()
+
     data_manager = DataManager(config)
-    
-    # Load Configurations from DB
-    _widgets = db_manager.get_widget_configs()
-    _mqtt_device_configs = db_manager.get_mqtt_configs()
-    logger.info(f"Loaded {len(_widgets)} widgets and {len(_mqtt_device_configs)} MQTT device configs from DB")
-    
     scanner = NetworkScanner(config.discovery)
     local_collector = LocalCollector()
     snmp_collector = SNMPCollector(
@@ -169,59 +163,74 @@ async def lifespan(app: FastAPI):
             password=config.collection.ssh_password,
             key_path=config.collection.ssh_key_path,
         )
-    
-    # Initialize and start MQTT Broker
+
+    # Initialize database for persistence
+    db = DatabaseManager()
+    _widgets.update(db.get_widget_configs())
+    _mqtt_device_configs.update(db.get_mqtt_configs())
+    logger.info(f"Loaded {len(_widgets)} widgets and {len(_mqtt_device_configs)} MQTT configs from database")
+
+    # Initialize and start MQTT client
     mqtt_service = MQTTBrokerService(config)
     await mqtt_service.start()
-    
+
+    # Start SNMP Agent to serve aggregated metrics
+    snmp_agent = SimpleSNMPAgent(data_manager, config.snmp.port)
+    await snmp_agent.start()
+    logger.info(f"SNMP Agent started on port {config.snmp.port}")
+
     # Collect local metrics immediately (run in executor to avoid blocking)
     loop = asyncio.get_event_loop()
     local_snapshot = await loop.run_in_executor(None, local_collector.collect_all)
     await data_manager.update_snapshot(local_snapshot)
-    print(f"[STARTUP] Local machine: {local_snapshot.machine.hostname}")
-    
-    # Collect from known SNMP devices in background
-    async def collect_priority():
-        priority_ips = ['192.168.0.100', '192.168.0.108', '192.168.0.121']
-        print(f"[STARTUP] Collecting from priority SNMP devices (background): {priority_ips}")
-        
-        for ip in priority_ips:
-            try:
-                print(f"[STARTUP] Trying SNMP on {ip}...")
-                snapshot = await snmp_collector.collect_all(ip)
-                if snapshot:
-                    await data_manager.update_snapshot(snapshot)
-                    print(f"[STARTUP] SUCCESS: {ip} -> {snapshot.machine.hostname}, snmp_active={snapshot.machine.snmp_active}")
-                else:
-                    print(f"[STARTUP] FAILED: {ip} - No snapshot returned")
-            except Exception as e:
-                print(f"[STARTUP] ERROR: {ip} - {e}")
-                
-    asyncio.create_task(collect_priority())
-    
+    logger.info(f"Local machine: {local_snapshot.machine.hostname}")
+
+    # Collect from configured static hosts in background
+    static_hosts = config.discovery.static_hosts
+    if static_hosts:
+        logger.info(f"Collecting from static hosts (background): {static_hosts}")
+
+        async def collect_priority():
+            for ip in static_hosts:
+                try:
+                    logger.debug(f"Trying SNMP on {ip}")
+                    snapshot = await snmp_collector.collect_all(ip)
+                    if snapshot:
+                        await data_manager.update_snapshot(snapshot)
+                        logger.info(f"SNMP success: {ip} -> {snapshot.machine.hostname}")
+                    else:
+                        logger.warning(f"SNMP failed for {ip}: no snapshot returned")
+                except Exception as e:
+                    logger.error(f"SNMP error for {ip}: {e}")
+
+        asyncio.create_task(collect_priority())
+
     # Start background tasks
     _running = True
     _discovery_task = asyncio.create_task(_discovery_loop())
     _collection_task = asyncio.create_task(_collection_loop())
-    _mqtt_oid_task = asyncio.create_task(_mqtt_oid_publishing_loop())
-    
+
     logger.info("Web server started")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down web server...")
     _running = False
-    
+
     if _discovery_task:
         _discovery_task.cancel()
     if _collection_task:
         _collection_task.cancel()
-    
-    # Stop MQTT Broker
+
+    # Stop SNMP Agent
+    if snmp_agent:
+        await snmp_agent.stop()
+
+    # Stop MQTT client
     if mqtt_service:
         await mqtt_service.stop()
-    
+
     logger.info("Web server shut down")
 
 
@@ -254,19 +263,19 @@ async def _discovery_loop():
     """Background task for network discovery."""
     global data_manager, scanner, config
     
-    print("[DISCOVERY] Starting discovery loop")
+    logger.info("Starting discovery loop")
     while _running and config.discovery.enabled:
         try:
-            print("[DISCOVERY] Running network discovery...")
+            logger.debug("Running network discovery...")
             machines = await scanner.discover_all()
-            print(f"[DISCOVERY] Found {len(machines)} machines")
-            
+            logger.info(f"Discovery found {len(machines)} machines")
+
             for machine in machines:
                 await data_manager.add_machine(machine)
-            
-            print(f"[DISCOVERY] Finished adding machines")
+
+            logger.debug("Finished adding machines")
         except Exception as e:
-            print(f"[DISCOVERY] Error: {e}")
+            logger.error(f"Discovery error: {e}")
         
         await asyncio.sleep(config.discovery.scan_interval_seconds)
 
@@ -308,112 +317,6 @@ async def _collection_loop():
             logger.error(f"Collection error: {e}")
         
         await asyncio.sleep(config.collection.interval_seconds)
-
-
-async def _mqtt_oid_publishing_loop():
-    """Background task for publishing configured OIDs to MQTT."""
-    global mqtt_service, snmp_collector, _mqtt_device_configs
-    
-    while _running:
-        try:
-            for device_ip, mqtt_config in list(_mqtt_device_configs.items()):
-                if not mqtt_config.get("enabled", False):
-                    continue
-                
-                custom_oids = mqtt_config.get("custom_oids", [])
-                
-                base_topic = mqtt_config.get("topic", f"snmp-agent/devices/{device_ip}")
-                
-                # Get latest data for the device
-                snapshot = data_manager.get_snapshot(device_ip)
-                
-                # Publish Standard Metrics
-                if snapshot:
-                    try:
-                        timestamp = datetime.now().isoformat()
-                        
-                        # CPU
-                        if mqtt_config.get("publish_cpu", True):
-                            payload = {
-                                "usage_percent": snapshot.cpu.usage_percent,
-                                "temp_c": snapshot.cpu.temperature_celsius,
-                                "load_1m": snapshot.cpu.load_1m,
-                                "timestamp": timestamp
-                            }
-                            await mqtt_service.publish(f"{base_topic}/cpu", payload)
-                        
-                        # Memory
-                        if mqtt_config.get("publish_memory", True):
-                            payload = {
-                                "total_gb": snapshot.memory.total_gb,
-                                "used_gb": snapshot.memory.used_gb,
-                                "usage_percent": snapshot.memory.usage_percent,
-                                "timestamp": timestamp
-                            }
-                            await mqtt_service.publish(f"{base_topic}/memory", payload)
-                            
-                        # Storage (summary of root or max usage)
-                        if mqtt_config.get("publish_storage", True) and snapshot.storage:
-                            # Publish each drive or a summary? Let's publish a summary for now + list
-                            max_usage = max([d.usage_percent for d in snapshot.storage.devices], default=0)
-                            payload = {
-                                "max_usage_percent": max_usage,
-                                "devices": [
-                                    {"mount": d.mount_point, "usage": d.usage_percent, "free_gb": d.free_gb} 
-                                    for d in snapshot.storage.devices
-                                ],
-                                "timestamp": timestamp
-                            }
-                            await mqtt_service.publish(f"{base_topic}/storage", payload)
-                            logger.info(f"Published standard metrics to {base_topic}")
-                            
-                    except Exception as e:
-                        logger.error(f"Error publishing standard metrics for {device_ip}: {e}")
-
-                # Publish Custom OIDs
-                for oid_config in custom_oids:
-                    try:
-                        oid = oid_config.get("oid")
-                        name = oid_config.get("name", oid)
-                        topic_suffix = oid_config.get("topic_suffix", "")
-                        
-                        # Query the OID value via SNMP
-                        value = await snmp_collector._get_oid(device_ip, oid)
-                        
-                        if value is not None:
-                            # Construct topic
-                            if topic_suffix:
-                                topic = f"{base_topic}/{topic_suffix}"
-                            else:
-                                # Use name as topic suffix if no explicit suffix
-                                safe_name = name.replace(" ", "_").lower()
-                                topic = f"{base_topic}/oid/{safe_name}"
-                            
-                            # Publish to MQTT
-                            payload = {
-                                "oid": oid,
-                                "name": name,
-                                "value": str(value),
-                                "device_ip": device_ip,
-                                "timestamp": datetime.now().isoformat()
-                            }
-                            await mqtt_service.publish(topic, payload)
-                            logger.info(f"Published custom OID to {topic}")
-                            
-                            # Handle SNMP Rebroadcasting
-                            if oid_config.get("snmp_rebroadcast", False):
-                                rebroadcast_oid = oid_config.get("rebroadcast_oid")
-                                if rebroadcast_oid:
-                                    await data_manager.update_custom_metric(device_ip, rebroadcast_oid, value)
-                            
-                    except Exception as e:
-                        logger.debug(f"Error publishing OID {oid_config.get('oid')} for {device_ip}: {e}")
-                        
-        except Exception as e:
-            logger.error(f"MQTT OID publishing error: {e}")
-        
-        # Default poll interval for OID publishing
-        await asyncio.sleep(5)
 
 
 # API Endpoints
@@ -590,6 +493,22 @@ async def get_aggregated_stats() -> Dict[str, Any]:
     return data_manager.get_aggregated_stats()
 
 
+@app.get("/api/snmp/oids")
+async def get_snmp_oids(base: Optional[str] = None):
+    """Get all OIDs served by the local SNMP agent (mirrored metrics)."""
+    if snmp_agent is None:
+        raise HTTPException(status_code=503, detail="SNMP agent not running")
+
+    if base:
+        data = snmp_agent.walk(base)
+    else:
+        data = snmp_agent.get_all_data()
+
+    # Sort by OID for readable output
+    sorted_oids = sorted(data.items(), key=lambda x: tuple(int(p) for p in x[0].split(".") if p))
+    return {"total": len(sorted_oids), "oids": {k: v for k, v in sorted_oids}}
+
+
 @app.post("/api/scan")
 async def trigger_scan(request: ScanRequest, background_tasks: BackgroundTasks):
     """Trigger a manual network scan."""
@@ -653,27 +572,13 @@ async def get_mqtt_status():
             "clients": 0,
         }
     
-    broker_running = mqtt_service._running
-    broker_info = {}
-    
-    
-    if mqtt_service._running:
-        broker_info = {
-            "enabled": config.mqtt.enabled,
-            "status": "connected" if mqtt_service._client_connected else "disconnected",
-            "port": config.mqtt.port,
-            "websocket_port": config.mqtt.websocket_port,
-            "host": config.mqtt.host,
-            "clients": 1 if mqtt_service._client_connected else 0, # Since we are just a client now
-            "topic_prefix": config.mqtt.topic_prefix,
-        }
-        return broker_info
-        
     return {
         "enabled": config.mqtt.enabled,
-        "status": "stopped",
+        "status": "connected" if mqtt_service._client_connected else ("stopped" if config.mqtt.enabled else "disabled"),
+        "host": config.mqtt.host,
         "port": config.mqtt.port,
-        "clients": 0,
+        "topic_prefix": config.mqtt.topic_prefix,
+        "connected": mqtt_service._client_connected,
     }
 
 
@@ -685,14 +590,6 @@ class WidgetCreate(BaseModel):
     display_type: str = "text"
 
 
-class MQTTOIDConfig(BaseModel):
-    """Configuration for an individual OID to publish via MQTT."""
-    oid: str
-    name: str
-    topic_suffix: str = ""  # appended to device topic, e.g. /temperature
-    interval_seconds: int = 5  # polling interval
-
-
 class MQTTDeviceConfig(BaseModel):
     device_ip: str
     enabled: bool = False
@@ -701,7 +598,6 @@ class MQTTDeviceConfig(BaseModel):
     publish_memory: bool = True
     publish_storage: bool = True
     publish_widgets: bool = True
-    custom_oids: List[MQTTOIDConfig] = []  # Custom OIDs to publish
 
 
 # Widget CRUD endpoints
@@ -727,13 +623,8 @@ async def create_widget(widget: WidgetCreate):
         "created_at": datetime.now().isoformat()
     }
     _widgets[widget_id] = widget_data
-    
-    # Persist to DB
-    try:
-        db_manager.save_widget_config(widget_id, widget_data)
-    except Exception as e:
-        logger.error(f"Failed to persist widget {widget_id}: {e}")
-        
+    if db:
+        db.save_widget_config(widget_id, widget_data)
     return widget_data
 
 
@@ -742,15 +633,9 @@ async def delete_widget(widget_id: str):
     """Delete a widget."""
     if widget_id not in _widgets:
         raise HTTPException(status_code=404, detail="Widget not found")
-        
     del _widgets[widget_id]
-    
-    # Remove from DB
-    try:
-        db_manager.delete_widget_config(widget_id)
-    except Exception as e:
-        logger.error(f"Failed to delete widget {widget_id} from DB: {e}")
-        
+    if db:
+        db.delete_widget_config(widget_id)
     return {"status": "deleted"}
 
 
@@ -773,8 +658,7 @@ async def get_mqtt_device_config(device_ip: str):
             "publish_cpu": True,
             "publish_memory": True,
             "publish_storage": True,
-            "publish_widgets": True,
-            "custom_oids": []
+            "publish_widgets": True
         }
     return _mqtt_device_configs[device_ip]
 
@@ -790,17 +674,11 @@ async def save_mqtt_device_config(config_data: MQTTDeviceConfig):
         "publish_cpu": config_data.publish_cpu,
         "publish_memory": config_data.publish_memory,
         "publish_storage": config_data.publish_storage,
-        "publish_widgets": config_data.publish_widgets,
-        "custom_oids": [oid.dict() for oid in config_data.custom_oids]
+        "publish_widgets": config_data.publish_widgets
     }
     _mqtt_device_configs[device_ip] = mqtt_config
-    
-    # Persist to DB
-    try:
-        db_manager.save_mqtt_config(device_ip, mqtt_config)
-    except Exception as e:
-        logger.error(f"Failed to persist MQTT config for {device_ip}: {e}")
-        
+    if db:
+        db.save_mqtt_config(device_ip, mqtt_config)
     return mqtt_config
 
 
@@ -929,12 +807,6 @@ async def get_oid_categories(ip: str):
     }
 
 
-@app.get("/api/devices/{ip}/oids/scan/progress")
-async def get_scan_progress(ip: str):
-    """Get scan progress for a device."""
-    return _scan_progress.get(ip, {"status": "idle", "percent": 0, "message": "Idle"})
-
-
 @app.post("/api/devices/{ip}/oids/scan")
 async def scan_device_oids(ip: str, request: OIDScanRequest):
     """Scan a device for available SNMP OIDs."""
@@ -951,33 +823,9 @@ async def scan_device_oids(ip: str, request: OIDScanRequest):
     all_results = {}
     categories = {}
     
-    # Initialize progress
-    _scan_progress[ip] = {
-        "status": "scanning",
-        "percent": 0,
-        "message": "Starting scan...",
-        "total_categories": len(base_oids),
-        "completed_categories": 0
-    }
-    
-    async def scan_category(base_oid):
+    for base_oid in base_oids:
         try:
-            # Find category name
-            cat_name = "unknown"
-            for name, (prefix, _) in COMMON_MIB_OIDS.items():
-                if base_oid.startswith(prefix):
-                    cat_name = name
-                    break
-            
-            _scan_progress[ip]["message"] = f"Scanning {cat_name}..."
-            
             results = await snmp_collector._walk_oid(ip, base_oid)
-            
-            # Update progress
-            _scan_progress[ip]["completed_categories"] += 1
-            completed = _scan_progress[ip]["completed_categories"]
-            total = _scan_progress[ip]["total_categories"]
-            _scan_progress[ip]["percent"] = int((completed / total) * 100)
             
             for oid, value in results.items():
                 if len(all_results) >= request.max_results:
@@ -1012,14 +860,6 @@ async def scan_device_oids(ip: str, request: OIDScanRequest):
                 
         except Exception as e:
             logger.debug(f"Error scanning {base_oid} on {ip}: {e}")
-
-    try:
-        # Run scans in parallel
-        await asyncio.gather(*(scan_category(oid) for oid in base_oids))
-    finally:
-        _scan_progress[ip]["status"] = "completed"
-        _scan_progress[ip]["percent"] = 100
-        _scan_progress[ip]["message"] = "Scan completed"
     
     return OIDScanResponse(
         ip=ip,

@@ -10,32 +10,18 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-try:
-    # pysnmp-lextudio v6+
-    from pysnmp.hlapi.v3arch.asyncio import (
-        get_cmd as getCmd,
-        bulk_cmd as bulkCmd,
-        walk_cmd as nextCmd,
-        SnmpEngine,
-        CommunityData,
-        UdpTransportTarget,
-        ContextData,
-        ObjectType,
-        ObjectIdentity,
-    )
-except ImportError:
-    # Fallback for older pysnmp
-    from pysnmp.hlapi.asyncio import (
-        getCmd,
-        bulkCmd,
-        nextCmd,
-        SnmpEngine,
-        CommunityData,
-        UdpTransportTarget,
-        ContextData,
-        ObjectType,
-        ObjectIdentity,
-    )
+from pysnmp.hlapi.asyncio import (
+    getCmd,
+    bulkCmd,
+    nextCmd,
+    walkCmd,
+    SnmpEngine,
+    CommunityData,
+    UdpTransportTarget,
+    ContextData,
+    ObjectType,
+    ObjectIdentity,
+)
 
 from ..core.models import (
     MachineInfo,
@@ -176,48 +162,32 @@ class SNMPCollector:
         return results
     
     async def _walk_oid(self, ip: str, oid: str) -> Dict[str, Any]:
-        """Walk an OID subtree - uses subprocess snmpwalk for reliability."""
+        """Walk an OID subtree using native pysnmp walkCmd."""
         results = {}
-        
+
         try:
-            import asyncio
-            import subprocess
-            
-            # Use subprocess snmpwalk which is more reliable
-            cmd = [
-                'snmpwalk', '-v2c', '-c', self.community,
-                '-On',  # Numeric OID output
-                '-Oq',  # Quick print
-                ip, oid
-            ]
-            
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.timeout * 3)
-            
-            if proc.returncode == 0:
-                for line in stdout.decode('utf-8', errors='ignore').strip().split('\n'):
-                    if not line.strip():
-                        continue
-                    # Format from -Oq is: .OID value
-                    parts = line.strip().split(' ', 1)
-                    if len(parts) >= 2:
-                        oid_str = parts[0].lstrip('.')
-                        value = parts[1].strip().strip('"')
-                        results[oid_str] = value
-                    elif len(parts) == 1 and parts[0]:
-                        oid_str = parts[0].lstrip('.')
-                        results[oid_str] = ""
-                        
-        except asyncio.TimeoutError:
-            logger.debug(f"SNMP walk timeout for {oid} from {ip}")
+            async for (errorIndication, errorStatus, errorIndex, varBinds) in walkCmd(
+                self._engine,
+                CommunityData(self.community),
+                UdpTransportTarget((ip, self.port), timeout=self.timeout, retries=self.retries),
+                ContextData(),
+                ObjectType(ObjectIdentity(oid)),
+                lexicographicMode=False,
+            ):
+                if errorIndication:
+                    logger.debug(f"SNMP walk error for {ip}: {errorIndication}")
+                    break
+                elif errorStatus:
+                    logger.debug(f"SNMP walk status error for {ip}: {errorStatus.prettyPrint()}")
+                    break
+
+                for varBind in varBinds:
+                    oid_str = str(varBind[0])
+                    results[oid_str] = varBind[1]
+
         except Exception as e:
             logger.debug(f"Failed to walk OID {oid} from {ip}: {e}")
-        
+
         return results
     
     async def check_snmp_available(self, ip: str) -> bool:

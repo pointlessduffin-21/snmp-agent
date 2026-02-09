@@ -76,7 +76,7 @@ logging:
 
 mqtt:
   enabled: true
-  port: 1883
-  host: "mqtt"
+  port: 1884
+  host: "127.0.0.1"
   publish_metrics: true
   topic_prefix: "snmp-agent/metrics"

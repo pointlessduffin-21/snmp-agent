@@ -1,43 +1,40 @@
-version: '3.8'
-
 services:
+  mqtt:
+    image: eclipse-mosquitto:latest
+    container_name: snmp-mqtt-broker
+    restart: unless-stopped
+    ports:
+      - "1884:1884"   # MQTT
+      - "9002:9002"   # MQTT WebSocket
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
   snmp-agent:
     build: .
     container_name: snmp-agent-monitor
     restart: unless-stopped
+    depends_on:
+      - mqtt
     ports:
-      - "8000:8000"
+      - "8000:8000"   # Web UI
+      - "1161:1161/udp"  # SNMP Agent
     volumes:
       - ./config:/app/config:ro
       - snmp-data:/app/data
-      - ./src:/app/src
-      - ./start_web.py:/app/start_web.py
     environment:
       - MQTT_ENABLED=true
       - MQTT_HOST=mqtt
-      - MQTT_PORT=1883
+      - MQTT_PORT=1884
       - DISCOVERY_SUBNETS=192.168.0.0/24
       - LOG_LEVEL=INFO
-    depends_on:
-      - mqtt
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/stats"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
-  mqtt:
-    image: eclipse-mosquitto:2
-    container_name: snmp-agent-mqtt
-    restart: unless-stopped
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
-      - ./mosquitto/log:/mosquitto/log
 
 volumes:
   snmp-data:

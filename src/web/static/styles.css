@@ -1145,6 +1145,97 @@ input:checked + .slider::before {
   border-left: 4px solid var(--danger);
 }
 
+/* SNMP Mirror */
+.snmp-mirror-list {
+  overflow-y: auto;
+  max-height: calc(80vh - 160px);
+  padding: 0.75rem 1.5rem;
+}
+
+.snmp-mirror-group {
+  margin-bottom: 0.75rem;
+}
+
+.snmp-mirror-group.collapsed .snmp-mirror-group-items {
+  display: none;
+}
+
+.snmp-mirror-group.collapsed .expand-icon {
+  transform: rotate(-90deg);
+}
+
+.snmp-mirror-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.snmp-mirror-group-header:hover {
+  background: var(--border);
+}
+
+.snmp-mirror-group-items {
+  margin-top: 0.25rem;
+}
+
+.snmp-mirror-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.snmp-mirror-table thead th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+}
+
+.snmp-mirror-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.snmp-mirror-table tbody tr:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.snmp-col-name {
+  padding: 0.35rem 0.6rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.snmp-col-oid {
+  padding: 0.35rem 0.6rem;
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.snmp-col-oid:hover {
+  color: var(--accent);
+}
+
+.snmp-col-value {
+  padding: 0.35rem 0.6rem;
+  color: var(--accent);
+  font-family: monospace;
+  word-break: break-all;
+}
+
 /* Loading & Error States */
 .loading {
   text-align: center;

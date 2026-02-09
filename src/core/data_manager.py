@@ -8,7 +8,7 @@ the current state of all monitored machines.
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor
 
 from .models import HardwareSnapshot, MachineInfo
@@ -62,12 +62,12 @@ class DataManager:
                 self._merge_machines(existing, machine)
             else:
                 self._machines[machine.ip] = machine
-                print(f"[ADD] {machine.ip}: hostname={machine.hostname}, method={machine.collection_method}")
+                logger.debug(f"Added machine {machine.ip}: hostname={machine.hostname}, method={machine.collection_method}")
 
     def _merge_machines(self, existing: MachineInfo, new_info: MachineInfo):
         """Internal helper to merge machine info."""
-        print(f"[MERGE] {existing.ip}: existing hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
-        print(f"[MERGE] {existing.ip}: new hostname={new_info.hostname}, snmp={getattr(new_info, 'snmp_active', False)}, method={new_info.collection_method}")
+        logger.debug(f"Merging {existing.ip}: existing hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
+        logger.debug(f"Merging {existing.ip}: new hostname={new_info.hostname}, snmp={getattr(new_info, 'snmp_active', False)}, method={new_info.collection_method}")
         
         if new_info.hostname and new_info.hostname != 'unknown' and new_info.hostname != new_info.ip:
             existing.hostname = new_info.hostname
@@ -105,7 +105,7 @@ class DataManager:
         if new_prio > existing_prio:
             existing.collection_method = new_info.collection_method
             
-        print(f"[MERGE] {existing.ip}: result hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
+        logger.debug(f"Merged {existing.ip}: result hostname={existing.hostname}, snmp={getattr(existing, 'snmp_active', False)}, method={existing.collection_method}")
 
     async def remove_machine(self, ip: str):
         """Remove a machine from the registry."""
@@ -146,20 +146,6 @@ class DataManager:
                     self._machines[ip] = snapshot.machine
                 self._snapshots[ip] = snapshot
             logger.info(f"Updated {len(snapshots)} snapshots")
-
-    async def update_custom_metric(self, ip: str, oid: str, value: Any):
-        """Update a custom metric for a machine."""
-        async with self._lock:
-            if ip in self._snapshots:
-                snapshot = self._snapshots[ip]
-                # Ensure custom_metrics dict exists (for backward compatibility if pickle loaded old obj)
-                if not hasattr(snapshot, 'custom_metrics'):
-                    snapshot.custom_metrics = {}
-                
-                snapshot.custom_metrics[oid] = value
-                logger.debug(f"Updated custom metric for {ip}: {oid}={value}")
-            else:
-                logger.warning(f"Cannot update custom metric for unknown machine: {ip}")
     
     def get_machines_by_status(self, online: bool = True) -> List[MachineInfo]:
         """Get machines filtered by online status."""

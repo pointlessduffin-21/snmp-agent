@@ -163,6 +163,8 @@ class Config:
         # MQTT settings
         if os.getenv("MQTT_ENABLED"):
             self.mqtt.enabled = os.getenv("MQTT_ENABLED").lower() == "true"
+        if os.getenv("MQTT_HOST"):
+            self.mqtt.host = os.getenv("MQTT_HOST")
         if os.getenv("MQTT_PORT"):
             self.mqtt.port = int(os.getenv("MQTT_PORT"))
 

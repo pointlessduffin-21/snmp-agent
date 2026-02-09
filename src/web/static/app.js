@@ -49,6 +49,13 @@ class SNMPMonitor {
         document.getElementById('btn-close-mqtt-manager')?.addEventListener('click', () => this.closeMqttManager());
         document.getElementById('btn-cancel-mqtt-manager')?.addEventListener('click', () => this.closeMqttManager());
         document.getElementById('btn-save-mqtt-devices')?.addEventListener('click', () => this.saveMqttDevices());
+
+        // SNMP Mirror
+        document.getElementById('btn-snmp-mirror')?.addEventListener('click', () => this.showSnmpMirror());
+        document.getElementById('btn-close-snmp-mirror')?.addEventListener('click', () => this.closeSnmpMirror());
+        document.getElementById('btn-refresh-snmp-mirror')?.addEventListener('click', () => this.loadSnmpMirrorData());
+        document.getElementById('snmp-mirror-filter')?.addEventListener('input', () => this.filterSnmpMirror());
+        document.getElementById('snmp-mirror-category')?.addEventListener('change', () => this.filterSnmpMirror());
     }
 
     async loadDevices() {
@@ -67,10 +74,16 @@ class SNMPMonitor {
         try {
             const response = await fetch('/api/stats');
             const stats = await response.json();
-            
+
             document.getElementById('stat-devices').textContent = stats.machine_count || 0;
             document.getElementById('stat-online').textContent = stats.online_count || 0;
             document.getElementById('stat-cpu').textContent = (stats.avg_cpu_percent || 0).toFixed(1) + '%';
+
+            // Update sidebar OID count
+            fetch('/api/snmp/oids').then(r => r.json()).then(d => {
+                const el = document.getElementById('snmp-oid-count');
+                if (el) el.textContent = d.total;
+            }).catch(() => {});
         } catch (error) {
             console.error('Failed to load stats:', error);
         }
@@ -273,9 +286,9 @@ class SNMPMonitor {
             });
             
             if (response.ok) {
-                this.showSuccess('Scan started for ' + subnet + '. Page will reload in 3 seconds...');
-                // Reload page after 3 seconds to show new devices
-                setTimeout(() => window.location.reload(), 3000);
+                this.showSuccess('Scan started for ' + subnet);
+                // Refresh after 10 seconds to show new devices
+                setTimeout(() => this.loadDevices(), 10000);
             }
         } catch (error) {
             console.error('Scan failed:', error);
@@ -800,21 +813,202 @@ class SNMPMonitor {
 
     filterOidResults(query) {
         if (!this.currentOidData) return;
-        
+
         const items = document.querySelectorAll('.oid-item');
         const lowerQuery = query.toLowerCase();
-        
+
         items.forEach(item => {
             const oid = item.dataset.oid.toLowerCase();
             const name = item.querySelector('.oid-name').textContent.toLowerCase();
             const value = item.querySelector('.oid-value').textContent.toLowerCase();
-            
+
             if (oid.includes(lowerQuery) || name.includes(lowerQuery) || value.includes(lowerQuery)) {
                 item.style.display = '';
             } else {
                 item.style.display = 'none';
             }
         });
+    }
+
+    // ── SNMP Mirror ────────────────────────────────────────────
+
+    async showSnmpMirror() {
+        document.getElementById('snmp-mirror-modal').classList.add('show');
+        this._snmpMirrorData = null;
+        await this.loadSnmpMirrorData();
+
+        // Start auto-refresh
+        this._snmpMirrorInterval = setInterval(() => {
+            if (document.getElementById('snmp-mirror-auto-refresh')?.checked) {
+                this.loadSnmpMirrorData();
+            }
+        }, 5000);
+    }
+
+    closeSnmpMirror() {
+        document.getElementById('snmp-mirror-modal').classList.remove('show');
+        if (this._snmpMirrorInterval) {
+            clearInterval(this._snmpMirrorInterval);
+            this._snmpMirrorInterval = null;
+        }
+    }
+
+    async loadSnmpMirrorData() {
+        try {
+            const response = await fetch('/api/snmp/oids');
+            const data = await response.json();
+            this._snmpMirrorData = data;
+
+            // Update sidebar count
+            const countEl = document.getElementById('snmp-oid-count');
+            if (countEl) countEl.textContent = data.total;
+
+            document.getElementById('snmp-mirror-total').textContent = `${data.total} OIDs`;
+            this.renderSnmpMirror();
+        } catch (error) {
+            console.error('Failed to load SNMP mirror data:', error);
+            document.getElementById('snmp-mirror-content').innerHTML =
+                '<div class="error">Failed to load SNMP OIDs</div>';
+        }
+    }
+
+    _categorizeOid(oid) {
+        if (oid.includes('.99999.1.1.')) return 'agent_info';
+        if (oid.includes('.99999.1.2.')) return 'machine';
+        if (oid.includes('.99999.1.3.')) return 'cpu';
+        if (oid.includes('.99999.1.4.')) return 'memory';
+        if (oid.includes('.99999.1.5.')) return 'storage';
+        if (oid.includes('.99999.1.6.')) return 'power';
+        if (oid.includes('.99999.1.7.')) return 'network';
+        return 'other';
+    }
+
+    _oidLabel(oid) {
+        const labels = {
+            '1.3.6.1.4.1.99999.1.1.1': 'agentVersion',
+            '1.3.6.1.4.1.99999.1.1.2': 'agentUptime',
+            '1.3.6.1.4.1.99999.1.1.3': 'machineCount',
+            '1.3.6.1.4.1.99999.1.2.1.1': 'machineIndex',
+            '1.3.6.1.4.1.99999.1.2.1.2': 'machineIP',
+            '1.3.6.1.4.1.99999.1.2.1.3': 'machineHostname',
+            '1.3.6.1.4.1.99999.1.2.1.4': 'machineOSType',
+            '1.3.6.1.4.1.99999.1.2.1.5': 'machineUptime',
+            '1.3.6.1.4.1.99999.1.2.1.6': 'machineStatus',
+            '1.3.6.1.4.1.99999.1.3.1.1': 'cpuIndex',
+            '1.3.6.1.4.1.99999.1.3.1.2': 'cpuUsage%',
+            '1.3.6.1.4.1.99999.1.3.1.3': 'cpuCores',
+            '1.3.6.1.4.1.99999.1.3.1.4': 'cpuThreads',
+            '1.3.6.1.4.1.99999.1.3.1.5': 'cpuFreqMHz',
+            '1.3.6.1.4.1.99999.1.3.1.6': 'cpuTemp',
+            '1.3.6.1.4.1.99999.1.3.1.7': 'cpuLoad1m',
+            '1.3.6.1.4.1.99999.1.3.1.8': 'cpuLoad5m',
+            '1.3.6.1.4.1.99999.1.3.1.9': 'cpuLoad15m',
+            '1.3.6.1.4.1.99999.1.3.1.10': 'cpuModel',
+            '1.3.6.1.4.1.99999.1.4.1.1': 'memIndex',
+            '1.3.6.1.4.1.99999.1.4.1.2': 'memTotalBytes',
+            '1.3.6.1.4.1.99999.1.4.1.3': 'memUsedBytes',
+            '1.3.6.1.4.1.99999.1.4.1.4': 'memAvailBytes',
+            '1.3.6.1.4.1.99999.1.4.1.5': 'memUsage%',
+            '1.3.6.1.4.1.99999.1.5.1.3': 'storageDevice',
+            '1.3.6.1.4.1.99999.1.5.1.4': 'storageMountPoint',
+            '1.3.6.1.4.1.99999.1.5.1.5': 'storageFSType',
+            '1.3.6.1.4.1.99999.1.5.1.6': 'storageTotalBytes',
+            '1.3.6.1.4.1.99999.1.5.1.7': 'storageUsedBytes',
+            '1.3.6.1.4.1.99999.1.5.1.8': 'storageFreeBytes',
+            '1.3.6.1.4.1.99999.1.5.1.9': 'storageUsage%',
+        };
+        // Try progressively shorter prefixes to find a label
+        const parts = oid.split('.');
+        for (let len = parts.length; len >= 10; len--) {
+            const prefix = parts.slice(0, len).join('.');
+            if (labels[prefix]) {
+                const suffix = parts.slice(len).join('.');
+                return suffix ? `${labels[prefix]}.${suffix}` : labels[prefix];
+            }
+        }
+        return oid;
+    }
+
+    _categoryLabel(cat) {
+        const map = {
+            agent_info: 'Agent Info',
+            machine: 'Machine Table',
+            cpu: 'CPU Table',
+            memory: 'Memory Table',
+            storage: 'Storage Table',
+            power: 'Power Table',
+            network: 'Network Table',
+            other: 'Other',
+        };
+        return map[cat] || cat;
+    }
+
+    _formatValue(value) {
+        if (typeof value === 'number' && value > 1073741824) {
+            return `${value} (${(value / 1073741824).toFixed(2)} GB)`;
+        }
+        return String(value);
+    }
+
+    renderSnmpMirror() {
+        if (!this._snmpMirrorData) return;
+        const container = document.getElementById('snmp-mirror-content');
+        const oids = this._snmpMirrorData.oids;
+        const filterText = (document.getElementById('snmp-mirror-filter')?.value || '').toLowerCase();
+        const categoryFilter = document.getElementById('snmp-mirror-category')?.value || 'all';
+
+        // Group by category
+        const groups = {};
+        for (const [oid, value] of Object.entries(oids)) {
+            const cat = this._categorizeOid(oid);
+            if (categoryFilter !== 'all' && cat !== categoryFilter) continue;
+            const label = this._oidLabel(oid);
+            const valStr = this._formatValue(value);
+            if (filterText && !oid.toLowerCase().includes(filterText) &&
+                !label.toLowerCase().includes(filterText) &&
+                !String(value).toLowerCase().includes(filterText)) continue;
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push({ oid, label, value, valStr });
+        }
+
+        if (Object.keys(groups).length === 0) {
+            container.innerHTML = '<div class="no-data">No OIDs match the current filter</div>';
+            return;
+        }
+
+        const categoryOrder = ['agent_info', 'machine', 'cpu', 'memory', 'storage', 'power', 'network', 'other'];
+        let html = '';
+        for (const cat of categoryOrder) {
+            if (!groups[cat]) continue;
+            html += `
+                <div class="snmp-mirror-group">
+                    <div class="snmp-mirror-group-header" onclick="this.parentElement.classList.toggle('collapsed')">
+                        <span class="expand-icon">▼</span>
+                        <strong>${this._categoryLabel(cat)}</strong>
+                        <span class="oid-category-count">(${groups[cat].length})</span>
+                    </div>
+                    <div class="snmp-mirror-group-items">
+                        <table class="snmp-mirror-table">
+                            <thead><tr><th>Name</th><th>OID</th><th>Value</th></tr></thead>
+                            <tbody>
+                                ${groups[cat].map(entry => `
+                                    <tr>
+                                        <td class="snmp-col-name">${entry.label}</td>
+                                        <td class="snmp-col-oid" title="Click to copy" onclick="navigator.clipboard.writeText('${entry.oid}')">${entry.oid}</td>
+                                        <td class="snmp-col-value">${entry.valStr}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+    }
+
+    filterSnmpMirror() {
+        this.renderSnmpMirror();
     }
 }
 

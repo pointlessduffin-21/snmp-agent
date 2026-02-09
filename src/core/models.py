@@ -7,7 +7,7 @@ collected from machines on the network.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
 
 @dataclass
@@ -238,7 +238,6 @@ class HardwareSnapshot:
     timestamp: datetime = field(default_factory=datetime.now)
     collection_duration_ms: float = 0.0
     errors: List[str] = field(default_factory=list)
-    custom_metrics: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> dict:
         """Convert snapshot to dictionary for serialization."""
@@ -283,5 +282,4 @@ class HardwareSnapshot:
             },
             "timestamp": self.timestamp.isoformat(),
             "errors": self.errors,
-            "custom_metrics": self.custom_metrics,
         }
