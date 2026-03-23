@@ -30,7 +30,8 @@ class MachineInfo:
     mdns_name: str = ""
     netbios_name: str = ""
     snmp_sysname: str = ""
-    
+    device_type: str = "computer"  # computer, hvac, network, ups, generic
+
     @property
     def display_name(self) -> str:
         """Get the best available display name for this device."""
@@ -226,6 +227,58 @@ class NetworkMetrics:
 
 
 @dataclass
+class HVACMetrics:
+    """Metrics for HVAC / Precision Air Conditioning Units."""
+
+    # Temperatures (Celsius)
+    supply_temp_c: Optional[float] = None
+    return_temp_c: Optional[float] = None
+    setpoint_temp_c: Optional[float] = None
+    outdoor_temp_c: Optional[float] = None
+
+    # Humidity (percent)
+    supply_humidity_pct: Optional[float] = None
+    return_humidity_pct: Optional[float] = None
+    setpoint_humidity_pct: Optional[float] = None
+
+    # Unit status
+    unit_status: str = "unknown"  # on, off, standby, idle, alarm
+    compressor_running: Optional[bool] = None
+    fan_speed_rpm: Optional[int] = None
+    airflow_cfm: Optional[float] = None
+
+    # Capacity (percent)
+    cooling_capacity_pct: Optional[float] = None
+    heating_capacity_pct: Optional[float] = None
+
+    # Power
+    power_watts: Optional[float] = None
+
+    # Alarms
+    active_alarms: List[str] = field(default_factory=list)
+
+    # Which vendor profile was used
+    vendor_profile: str = ""
+
+    @property
+    def has_data(self) -> bool:
+        """Check if any meaningful HVAC data was collected."""
+        return any([
+            self.supply_temp_c is not None,
+            self.return_temp_c is not None,
+            self.supply_humidity_pct is not None,
+            self.unit_status != "unknown",
+        ])
+
+    @property
+    def temp_delta(self) -> Optional[float]:
+        """Temperature difference between return and supply air."""
+        if self.return_temp_c is not None and self.supply_temp_c is not None:
+            return round(self.return_temp_c - self.supply_temp_c, 1)
+        return None
+
+
+@dataclass
 class HardwareSnapshot:
     """Complete hardware snapshot for a machine at a point in time."""
     
@@ -235,6 +288,7 @@ class HardwareSnapshot:
     storage: StorageMetrics
     power: PowerMetrics
     network: NetworkMetrics
+    hvac: Optional[HVACMetrics] = None
     timestamp: datetime = field(default_factory=datetime.now)
     collection_duration_ms: float = 0.0
     errors: List[str] = field(default_factory=list)
@@ -280,6 +334,15 @@ class HardwareSnapshot:
                 "battery_percent": self.power.battery_percent,
                 "is_plugged_in": self.power.is_plugged_in,
             },
+            "hvac": {
+                "supply_temp_c": self.hvac.supply_temp_c,
+                "return_temp_c": self.hvac.return_temp_c,
+                "setpoint_temp_c": self.hvac.setpoint_temp_c,
+                "humidity_pct": self.hvac.supply_humidity_pct,
+                "unit_status": self.hvac.unit_status,
+                "cooling_capacity_pct": self.hvac.cooling_capacity_pct,
+                "active_alarms": self.hvac.active_alarms,
+            } if self.hvac and self.hvac.has_data else None,
             "timestamp": self.timestamp.isoformat(),
             "errors": self.errors,
         }

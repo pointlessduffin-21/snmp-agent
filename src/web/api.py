@@ -34,6 +34,7 @@ from ..collectors.snmp_collector import SNMPCollector
 from ..collectors.ssh_collector import SSHCollector
 from ..services.mqtt_broker import MQTTBrokerService
 from ..agent.snmp_agent import SimpleSNMPAgent
+from ..collectors.hvac_collector import HVACCollector
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class DeviceInfo(BaseModel):
     netbios_name: str = ""
     snmp_sysname: str = ""
     display_name: str = ""
+    device_type: str = "computer"
 
 
 class CPUInfo(BaseModel):
@@ -96,6 +98,26 @@ class DeviceMetrics(BaseModel):
     memory: MemoryInfo
     storage: List[StorageDeviceInfo]
     timestamp: str
+
+
+class HVACInfo(BaseModel):
+    supply_temp_c: Optional[float] = None
+    return_temp_c: Optional[float] = None
+    setpoint_temp_c: Optional[float] = None
+    outdoor_temp_c: Optional[float] = None
+    supply_humidity_pct: Optional[float] = None
+    return_humidity_pct: Optional[float] = None
+    setpoint_humidity_pct: Optional[float] = None
+    unit_status: str = "unknown"
+    compressor_running: Optional[bool] = None
+    fan_speed_rpm: Optional[int] = None
+    airflow_cfm: Optional[float] = None
+    cooling_capacity_pct: Optional[float] = None
+    heating_capacity_pct: Optional[float] = None
+    power_watts: Optional[float] = None
+    active_alarms: List[str] = []
+    vendor_profile: str = ""
+    temp_delta: Optional[float] = None
 
 
 class ScanRequest(BaseModel):
@@ -243,6 +265,7 @@ def _build_device_info(m: MachineInfo) -> DeviceInfo:
         netbios_name=m.netbios_name,
         snmp_sysname=m.snmp_sysname,
         display_name=m.display_name,
+        device_type=m.device_type,
     )
 
 
@@ -332,8 +355,14 @@ async def _collection_loop(app: FastAPI):
                             snapshot = await loop.run_in_executor(
                                 None, state.local_collector.collect_all
                             )
+                        elif machine.device_type == "hvac":
+                            # Known HVAC device — use HVAC collector directly
+                            snapshot = await state.hvac_collector.collect_all(machine.ip)
                         elif state.config.collection.collect_remote_snmp:
                             snapshot = await state.snmp_collector.collect_all(machine.ip)
+                            # If standard SNMP returned nothing, try HVAC detection
+                            if not snapshot and state.hvac_collector:
+                                snapshot = await state.hvac_collector.collect_all(machine.ip)
 
                         if not snapshot and state.ssh_collector and state.config.collection.collect_remote_ssh:
                             snapshot = await loop.run_in_executor(
@@ -404,6 +433,10 @@ async def lifespan(app: FastAPI):
     app.state.scanner = NetworkScanner(config.discovery)
     app.state.local_collector = LocalCollector()
     app.state.snmp_collector = SNMPCollector(
+        community=config.collection.snmp_community,
+        timeout=config.collection.timeout_seconds,
+    )
+    app.state.hvac_collector = HVACCollector(
         community=config.collection.snmp_community,
         timeout=config.collection.timeout_seconds,
     )
@@ -598,6 +631,70 @@ async def get_device_metrics(ip: str, request: Request) -> DeviceMetrics:
         ],
         timestamp=snapshot.timestamp.isoformat(),
     )
+
+
+@app.get("/api/devices/{ip}/hvac")
+async def get_device_hvac(ip: str, request: Request) -> Optional[HVACInfo]:
+    """Get HVAC metrics for a device (returns null for non-HVAC devices)."""
+    s = _state(request)
+    snapshot = await s.data_manager.get_snapshot(ip)
+
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if not snapshot.hvac or not snapshot.hvac.has_data:
+        return None
+
+    h = snapshot.hvac
+    return HVACInfo(
+        supply_temp_c=h.supply_temp_c,
+        return_temp_c=h.return_temp_c,
+        setpoint_temp_c=h.setpoint_temp_c,
+        outdoor_temp_c=h.outdoor_temp_c,
+        supply_humidity_pct=h.supply_humidity_pct,
+        return_humidity_pct=h.return_humidity_pct,
+        setpoint_humidity_pct=h.setpoint_humidity_pct,
+        unit_status=h.unit_status,
+        compressor_running=h.compressor_running,
+        fan_speed_rpm=h.fan_speed_rpm,
+        airflow_cfm=h.airflow_cfm,
+        cooling_capacity_pct=h.cooling_capacity_pct,
+        heating_capacity_pct=h.heating_capacity_pct,
+        power_watts=h.power_watts,
+        active_alarms=h.active_alarms,
+        vendor_profile=h.vendor_profile,
+        temp_delta=h.temp_delta,
+    )
+
+
+@app.get("/api/hvac/summary")
+async def get_hvac_summary(request: Request):
+    """Get summary of all HVAC devices."""
+    s = _state(request)
+    snapshots = await s.data_manager.get_snapshots()
+
+    hvac_devices = []
+    for ip, snap in snapshots.items():
+        if snap.hvac and snap.hvac.has_data:
+            hvac_devices.append({
+                "ip": ip,
+                "hostname": snap.machine.hostname,
+                "display_name": snap.machine.display_name,
+                "supply_temp_c": snap.hvac.supply_temp_c,
+                "return_temp_c": snap.hvac.return_temp_c,
+                "setpoint_temp_c": snap.hvac.setpoint_temp_c,
+                "humidity_pct": snap.hvac.supply_humidity_pct,
+                "unit_status": snap.hvac.unit_status,
+                "cooling_capacity_pct": snap.hvac.cooling_capacity_pct,
+                "alarm_count": len(snap.hvac.active_alarms),
+                "vendor_profile": snap.hvac.vendor_profile,
+                "is_online": snap.machine.is_online,
+            })
+
+    return {
+        "count": len(hvac_devices),
+        "devices": hvac_devices,
+    }
 
 
 @app.get("/api/stats")

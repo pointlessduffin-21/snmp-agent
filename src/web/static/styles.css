@@ -1442,3 +1442,79 @@ input:checked + .slider::before {
     max-height: 95vh;
   }
 }
+
+/* ── HVAC / PACU Device Styles ── */
+
+.device-card.hvac-device {
+  border-left: 3px solid #00bcd4;
+}
+
+.device-card.hvac-device.snmp-active {
+  border-left-color: #00bcd4;
+}
+
+.device-type-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.hvac-badge {
+  background: #00bcd4;
+  color: #fff;
+}
+
+.hvac-preview {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.hvac-loading {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.hvac-metrics-mini {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 0.8rem;
+}
+
+.hvac-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hvac-label {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.hvac-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.hvac-alarm-badge {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 3px 8px;
+  background: rgba(233, 69, 96, 0.2);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}

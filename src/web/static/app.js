@@ -153,8 +153,8 @@ class SNMPMonitor {
 
     createDeviceCard(device) {
         const card = document.createElement('div');
-        
-        // Determine status class: snmp-active (green), online (orange), offline (red)
+
+        // Determine status class
         let statusClass, statusText;
         if (!device.is_online) {
             statusClass = 'offline';
@@ -166,29 +166,54 @@ class SNMPMonitor {
             statusClass = 'online-no-snmp';
             statusText = 'Online';
         }
-        
-        card.className = `device-card ${statusClass}`;
-        
+
+        const isHVAC = device.device_type === 'hvac';
+        card.className = `device-card ${statusClass}${isHVAC ? ' hvac-device' : ''}`;
+
         const uptime = this.formatUptime(device.uptime_seconds);
-        
-        // Use display_name or fallback to best available name
+
         const displayName = device.display_name && device.display_name !== 'unknown' && device.display_name !== device.ip
             ? device.display_name
             : (device.netbios_name || device.mdns_name || device.dns_name || device.hostname || device.ip);
         const finalName = displayName !== 'unknown' ? displayName : device.ip;
-        
+
         const vendorText = device.vendor && device.vendor !== 'Unknown' ? device.vendor : '';
         const macText = device.mac_address || '';
         const osText = device.os_type && device.os_type !== 'unknown' ? device.os_type : '';
-        
-        // Show resolved names as tooltip/subtitle
+
         const nameLabels = [];
         if (device.netbios_name) nameLabels.push(`SMB: ${device.netbios_name}`);
         if (device.mdns_name) nameLabels.push(`mDNS: ${device.mdns_name}`);
         if (device.dns_name) nameLabels.push(`DNS: ${device.dns_name}`);
         const namesSubtitle = nameLabels.length > 0 ? nameLabels.join(' | ') : '';
-        
-        card.innerHTML = `
+
+        let cardBody;
+        if (isHVAC) {
+            cardBody = `
+            <div class="device-header">
+                <div class="device-name-group">
+                    <div class="device-name">${finalName}</div>
+                    <div class="device-type-badge hvac-badge">PACU</div>
+                    ${namesSubtitle ? `<div class="device-names-subtitle">${namesSubtitle}</div>` : ''}
+                </div>
+                <div class="device-status ${statusClass}">
+                    ${statusText}
+                </div>
+            </div>
+            <div class="device-info">
+                <div class="device-row">🌐 ${device.ip}</div>
+                ${osText ? `<div class="device-row">❄️ ${osText}</div>` : '<div class="device-row">❄️ HVAC Unit</div>'}
+                ${vendorText ? `<div class="device-row">🏭 ${vendorText}</div>` : ''}
+                <div class="device-row">⏱️ ${uptime}</div>
+                <div class="device-method">via ${device.collection_method}</div>
+                <div class="hvac-preview" id="hvac-preview-${device.ip.replace(/\./g, '-')}">
+                    <span class="hvac-loading">Loading HVAC data...</span>
+                </div>
+            </div>`;
+            // Load HVAC preview data async
+            this._loadHVACPreview(device.ip);
+        } else {
+            cardBody = `
             <div class="device-header">
                 <div class="device-name-group">
                     <div class="device-name">${finalName}</div>
@@ -205,12 +230,56 @@ class SNMPMonitor {
                 ${vendorText ? `<div class="device-row">🏭 ${vendorText}</div>` : ''}
                 <div class="device-row">⏱️ ${uptime}</div>
                 <div class="device-method">via ${device.collection_method}</div>
-            </div>
-        `;
-        
+            </div>`;
+        }
+
+        card.innerHTML = cardBody;
         card.addEventListener('click', () => this.showDeviceDetails(device.ip));
-        
+
         return card;
+    }
+
+    async _loadHVACPreview(ip) {
+        try {
+            const resp = await fetch(`/api/devices/${ip}/hvac`);
+            if (!resp.ok) return;
+            const hvac = await resp.json();
+            if (!hvac) return;
+
+            const el = document.getElementById(`hvac-preview-${ip.replace(/\./g, '-')}`);
+            if (!el) return;
+
+            const supplyTemp = hvac.supply_temp_c != null ? `${hvac.supply_temp_c}°C` : '--';
+            const returnTemp = hvac.return_temp_c != null ? `${hvac.return_temp_c}°C` : '--';
+            const humidity = hvac.supply_humidity_pct != null ? `${hvac.supply_humidity_pct}%` : '--';
+            const status = hvac.unit_status || 'unknown';
+            const statusIcon = status === 'on' ? '🟢' : status === 'standby' ? '🟡' : status === 'off' ? '🔴' : '⚪';
+            const alarmCount = (hvac.active_alarms || []).length;
+
+            el.innerHTML = `
+                <div class="hvac-metrics-mini">
+                    <div class="hvac-metric-row">
+                        <span class="hvac-label">Supply</span>
+                        <span class="hvac-value">${supplyTemp}</span>
+                    </div>
+                    <div class="hvac-metric-row">
+                        <span class="hvac-label">Return</span>
+                        <span class="hvac-value">${returnTemp}</span>
+                    </div>
+                    <div class="hvac-metric-row">
+                        <span class="hvac-label">Humidity</span>
+                        <span class="hvac-value">${humidity}</span>
+                    </div>
+                    <div class="hvac-metric-row">
+                        <span class="hvac-label">Unit</span>
+                        <span class="hvac-value">${statusIcon} ${status}</span>
+                    </div>
+                    ${alarmCount > 0 ? `<div class="hvac-alarm-badge">⚠️ ${alarmCount} alarm${alarmCount > 1 ? 's' : ''}</div>` : ''}
+                </div>
+            `;
+        } catch (e) {
+            // Silently fail - card still works without preview
+        }
     }
 
     showDeviceDetails(ip) {

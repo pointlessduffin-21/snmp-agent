@@ -86,6 +86,7 @@ class DataManager:
             "snmp_sysname": m.snmp_sysname,
             "last_seen": m.last_seen.isoformat(),
             "is_online": m.is_online,
+            "device_type": m.device_type,
         })
 
     def _merge_machines(self, existing: MachineInfo, new_info: MachineInfo):

@@ -162,6 +162,8 @@ class SimpleSNMPAgent:
         for ip, snapshot in snapshots.items():
             idx = self._ip_to_index[ip]
             self._add_machine_oids(idx, snapshot)
+            if snapshot.hvac and snapshot.hvac.has_data:
+                self._add_hvac_oids(idx, snapshot)
 
         # Pre-sort OIDs for efficient GETNEXT/GETBULK
         self._sorted_oids = sorted(
@@ -212,6 +214,24 @@ class SimpleSNMPAgent:
             self._oid_data[f"{MIBDefinitions.STORAGE_USED_BYTES}.{key}"] = device.used_bytes
             self._oid_data[f"{MIBDefinitions.STORAGE_FREE_BYTES}.{key}"] = device.free_bytes
             self._oid_data[f"{MIBDefinitions.STORAGE_USAGE_PERCENT}.{key}"] = int(device.usage_percent)
+
+    def _add_hvac_oids(self, idx: int, snapshot: HardwareSnapshot):
+        """Add HVAC-specific OIDs for a machine."""
+        hvac = snapshot.hvac
+        self._oid_data[f"{MIBDefinitions.HVAC_INDEX}.{idx}"] = idx
+        self._oid_data[f"{MIBDefinitions.HVAC_SUPPLY_TEMP}.{idx}"] = int((hvac.supply_temp_c or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_RETURN_TEMP}.{idx}"] = int((hvac.return_temp_c or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_SETPOINT_TEMP}.{idx}"] = int((hvac.setpoint_temp_c or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_SUPPLY_HUMIDITY}.{idx}"] = int((hvac.supply_humidity_pct or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_RETURN_HUMIDITY}.{idx}"] = int((hvac.return_humidity_pct or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_SETPOINT_HUMIDITY}.{idx}"] = int((hvac.setpoint_humidity_pct or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_UNIT_STATUS}.{idx}"] = hvac.unit_status
+        self._oid_data[f"{MIBDefinitions.HVAC_COOLING_CAPACITY}.{idx}"] = int((hvac.cooling_capacity_pct or 0) * 10)
+        self._oid_data[f"{MIBDefinitions.HVAC_FAN_SPEED}.{idx}"] = hvac.fan_speed_rpm or 0
+        self._oid_data[f"{MIBDefinitions.HVAC_AIRFLOW}.{idx}"] = int(hvac.airflow_cfm or 0)
+        self._oid_data[f"{MIBDefinitions.HVAC_POWER_WATTS}.{idx}"] = int(hvac.power_watts or 0)
+        self._oid_data[f"{MIBDefinitions.HVAC_ALARM_COUNT}.{idx}"] = len(hvac.active_alarms)
+        self._oid_data[f"{MIBDefinitions.HVAC_VENDOR_PROFILE}.{idx}"] = hvac.vendor_profile
 
     # -- SNMP protocol handling --
 
