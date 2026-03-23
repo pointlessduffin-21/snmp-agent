@@ -1236,6 +1236,137 @@ input:checked + .slider::before {
   word-break: break-all;
 }
 
+/* SNMP Traps */
+.snmp-traps-list {
+  overflow-y: auto;
+  max-height: calc(80vh - 160px);
+  padding: 0;
+}
+
+.trap-table-wrapper {
+  overflow-x: auto;
+}
+
+.trap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.trap-table thead th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-secondary);
+  white-space: nowrap;
+}
+
+.trap-row {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-left: 3px solid transparent;
+}
+
+.trap-row:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.trap-severity-critical {
+  border-left-color: var(--danger);
+}
+
+.trap-severity-warning {
+  border-left-color: var(--warning);
+}
+
+.trap-severity-info {
+  border-left-color: var(--success);
+}
+
+.trap-col-time {
+  padding: 0.4rem 0.75rem;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: monospace;
+  font-size: 0.75rem;
+}
+
+.trap-col-source {
+  padding: 0.4rem 0.75rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.trap-col-oid {
+  padding: 0.4rem 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.trap-col-details {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.trap-varbind {
+  display: inline-block;
+  background: rgba(255,255,255,0.05);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  margin-right: 0.35rem;
+  margin-bottom: 0.15rem;
+  font-family: monospace;
+  font-size: 0.7rem;
+}
+
+.trap-severity-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.severity-critical {
+  background: var(--danger);
+  color: white;
+}
+
+.severity-warning {
+  background: var(--warning);
+  color: #333;
+}
+
+.severity-info {
+  background: var(--success);
+  color: white;
+}
+
+.severity-unknown {
+  background: var(--border);
+  color: var(--text-secondary);
+}
+
+.trap-sim-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  background: var(--accent);
+  color: white;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
 /* Loading & Error States */
 .loading {
   text-align: center;

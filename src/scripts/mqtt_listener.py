@@ -51,7 +51,7 @@ async def listen():
         print(f"Error: {e}")
         try:
             await client.disconnect()
-        except:
+        except Exception:
             pass
 
 if __name__ == '__main__':

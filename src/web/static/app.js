@@ -56,6 +56,15 @@ class SNMPMonitor {
         document.getElementById('btn-refresh-snmp-mirror')?.addEventListener('click', () => this.loadSnmpMirrorData());
         document.getElementById('snmp-mirror-filter')?.addEventListener('input', () => this.filterSnmpMirror());
         document.getElementById('snmp-mirror-category')?.addEventListener('change', () => this.filterSnmpMirror());
+
+        // SNMP Traps
+        document.getElementById('btn-snmp-traps')?.addEventListener('click', () => this.showSnmpTraps());
+        document.getElementById('btn-close-snmp-traps')?.addEventListener('click', () => this.closeSnmpTraps());
+        document.getElementById('btn-refresh-traps')?.addEventListener('click', () => this.loadSnmpTrapsData());
+        document.getElementById('btn-simulate-trap')?.addEventListener('click', () => this.simulateTrap());
+        document.getElementById('btn-simulate-batch')?.addEventListener('click', () => this.simulateBatchTraps());
+        document.getElementById('btn-clear-traps')?.addEventListener('click', () => this.clearTraps());
+        document.getElementById('snmp-trap-filter')?.addEventListener('input', () => this.renderSnmpTraps());
     }
 
     async loadDevices() {
@@ -82,6 +91,12 @@ class SNMPMonitor {
             // Update sidebar OID count
             fetch('/api/snmp/oids').then(r => r.json()).then(d => {
                 const el = document.getElementById('snmp-oid-count');
+                if (el) el.textContent = d.total;
+            }).catch(() => {});
+
+            // Update sidebar trap count
+            fetch('/api/snmp/traps?limit=0').then(r => r.json()).then(d => {
+                const el = document.getElementById('snmp-trap-count');
                 if (el) el.textContent = d.total;
             }).catch(() => {});
         } catch (error) {
@@ -1009,6 +1024,171 @@ class SNMPMonitor {
 
     filterSnmpMirror() {
         this.renderSnmpMirror();
+    }
+
+    // ── SNMP Traps ───────────────────────────────────────────────
+
+    async showSnmpTraps() {
+        document.getElementById('snmp-traps-modal').classList.add('show');
+        this._snmpTrapsData = null;
+        await this.loadSnmpTrapsData();
+
+        this._snmpTrapsInterval = setInterval(() => {
+            if (document.getElementById('snmp-traps-auto-refresh')?.checked) {
+                this.loadSnmpTrapsData();
+            }
+        }, 3000);
+    }
+
+    closeSnmpTraps() {
+        document.getElementById('snmp-traps-modal').classList.remove('show');
+        if (this._snmpTrapsInterval) {
+            clearInterval(this._snmpTrapsInterval);
+            this._snmpTrapsInterval = null;
+        }
+    }
+
+    async loadSnmpTrapsData() {
+        try {
+            const response = await fetch('/api/snmp/traps?limit=200');
+            const data = await response.json();
+            this._snmpTrapsData = data;
+
+            const countEl = document.getElementById('snmp-trap-count');
+            if (countEl) countEl.textContent = data.total;
+
+            document.getElementById('snmp-traps-total').textContent = `${data.total} traps`;
+            this.renderSnmpTraps();
+        } catch (error) {
+            console.error('Failed to load trap data:', error);
+            document.getElementById('snmp-traps-content').innerHTML =
+                '<div class="error">Failed to load traps</div>';
+        }
+    }
+
+    async simulateTrap() {
+        const select = document.getElementById('snmp-trap-simulate');
+        const trapType = select.value;
+        if (!trapType) {
+            this.showError('Select a trap type to simulate');
+            return;
+        }
+
+        try {
+            await fetch(`/api/snmp/traps/simulate?trap_type=${trapType}`, { method: 'POST' });
+            this.showSuccess(`Simulated ${trapType} trap`);
+            select.value = '';
+            await this.loadSnmpTrapsData();
+        } catch (error) {
+            this.showError('Failed to simulate trap');
+        }
+    }
+
+    async simulateBatchTraps() {
+        try {
+            const response = await fetch('/api/snmp/traps/simulate-batch', { method: 'POST' });
+            const data = await response.json();
+            this.showSuccess(`Simulated ${data.count} traps`);
+            await this.loadSnmpTrapsData();
+        } catch (error) {
+            this.showError('Failed to simulate traps');
+        }
+    }
+
+    async clearTraps() {
+        try {
+            await fetch('/api/snmp/traps', { method: 'DELETE' });
+            this.showSuccess('Traps cleared');
+            await this.loadSnmpTrapsData();
+        } catch (error) {
+            this.showError('Failed to clear traps');
+        }
+    }
+
+    _trapOidLabel(oid) {
+        const labels = {
+            '1.3.6.1.6.3.1.1.5.1': 'coldStart',
+            '1.3.6.1.6.3.1.1.5.2': 'warmStart',
+            '1.3.6.1.6.3.1.1.5.3': 'linkDown',
+            '1.3.6.1.6.3.1.1.5.4': 'linkUp',
+            '1.3.6.1.6.3.1.1.5.5': 'authenticationFailure',
+            '1.3.6.1.4.1.99999.2.1': 'cpuHighUtilization',
+            '1.3.6.1.4.1.99999.2.2': 'diskSpaceCritical',
+        };
+        return labels[oid] || oid;
+    }
+
+    _trapSeverity(trapOid) {
+        const critical = ['1.3.6.1.6.3.1.1.5.3', '1.3.6.1.6.3.1.1.5.5',
+                          '1.3.6.1.4.1.99999.2.1', '1.3.6.1.4.1.99999.2.2'];
+        const warning = ['1.3.6.1.6.3.1.1.5.1', '1.3.6.1.6.3.1.1.5.2'];
+        const info = ['1.3.6.1.6.3.1.1.5.4'];
+
+        if (critical.includes(trapOid)) return 'critical';
+        if (warning.includes(trapOid)) return 'warning';
+        if (info.includes(trapOid)) return 'info';
+        return 'unknown';
+    }
+
+    renderSnmpTraps() {
+        if (!this._snmpTrapsData) return;
+        const container = document.getElementById('snmp-traps-content');
+        const traps = this._snmpTrapsData.traps || [];
+        const filterText = (document.getElementById('snmp-trap-filter')?.value || '').toLowerCase();
+
+        if (traps.length === 0) {
+            container.innerHTML = `
+                <div class="no-data" style="padding: 3rem;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔔</div>
+                    <div>No traps received yet</div>
+                    <div style="font-size: 0.8rem; margin-top: 0.5rem;">
+                        Use the "Simulate" dropdown above to generate test traps,<br>
+                        or send real traps to UDP port 1162
+                    </div>
+                </div>`;
+            return;
+        }
+
+        const filtered = traps.filter(t => {
+            if (!filterText) return true;
+            const searchStr = `${t.source_ip} ${t.trap_oid} ${this._trapOidLabel(t.trap_oid)} ${JSON.stringify(t.var_binds)}`.toLowerCase();
+            return searchStr.includes(filterText);
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="no-data">No traps match the filter</div>';
+            return;
+        }
+
+        let html = '<div class="trap-table-wrapper"><table class="trap-table"><thead><tr>';
+        html += '<th>Time</th><th>Source</th><th>Trap</th><th>Severity</th><th>Details</th>';
+        html += '</tr></thead><tbody>';
+
+        for (const trap of filtered) {
+            const severity = this._trapSeverity(trap.trap_oid);
+            const label = this._trapOidLabel(trap.trap_oid);
+            const time = new Date(trap.timestamp).toLocaleTimeString();
+            const simBadge = trap.simulated ? ' <span class="trap-sim-badge">SIM</span>' : '';
+
+            // Get interesting var_binds (skip sysUpTime and snmpTrapOID)
+            const details = (trap.var_binds || [])
+                .filter(vb => vb.oid !== '1.3.6.1.2.1.1.3.0' && vb.oid !== '1.3.6.1.6.3.1.1.4.1.0')
+                .map(vb => `<span class="trap-varbind">${vb.oid.split('.').slice(-3).join('.')} = ${vb.value}</span>`)
+                .join(' ');
+
+            html += `
+                <tr class="trap-row trap-severity-${severity}">
+                    <td class="trap-col-time">${time}</td>
+                    <td class="trap-col-source">${trap.source_ip}${simBadge}</td>
+                    <td class="trap-col-oid" title="${trap.trap_oid}">${label}</td>
+                    <td><span class="trap-severity-badge severity-${severity}">${severity}</span></td>
+                    <td class="trap-col-details">${details || '-'}</td>
+                </tr>
+            `;
+        }
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
     }
 }
 

@@ -7,6 +7,7 @@ using standard MIBs (HOST-RESOURCES-MIB, UCD-SNMP-MIB).
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 from typing import Optional, Dict, Any
 
@@ -511,10 +512,9 @@ class SNMPCollector:
             def extract_int(val, default=0):
                 try:
                     s = str(val).strip()
-                    import re
                     match = re.search(r'(\d+)', s)
                     return int(match.group(1)) if match else default
-                except:
+                except (ValueError, TypeError, AttributeError):
                     return default
 
             # Build storage entries

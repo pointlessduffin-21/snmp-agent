@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     """Manages SQLite database for persistence."""
-    
+
     def __init__(self, db_path: str = "data/snmp_agent.db"):
         self.db_path = db_path
         self._lock = threading.Lock()
@@ -18,10 +18,10 @@ class DatabaseManager:
     def _init_db(self):
         """Initialize database tables."""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with self._lock, sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Key-Value store for widgets and miscellaneous configs
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS kv_store (
@@ -30,7 +30,7 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             # MQTT Configuration store
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS mqtt_configs (
@@ -39,9 +39,54 @@ class DatabaseManager:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
+            # Device inventory
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS devices (
+                    ip TEXT PRIMARY KEY,
+                    data_json TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.commit()
             logger.info(f"Database initialized at {self.db_path}")
+
+    # -- Device persistence --
+
+    def save_device(self, ip: str, data: Dict[str, Any]):
+        """Save device info."""
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO devices (ip, data_json, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            """, (ip, json.dumps(data)))
+            conn.commit()
+
+    def get_all_devices(self) -> Dict[str, Dict]:
+        """Load all persisted devices."""
+        devices = {}
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ip, data_json FROM devices")
+            rows = cursor.fetchall()
+
+            for ip, data_json in rows:
+                try:
+                    devices[ip] = json.loads(data_json)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode device data for {ip}")
+        return devices
+
+    def delete_device(self, ip: str):
+        """Delete a persisted device."""
+        with self._lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM devices WHERE ip = ?", (ip,))
+            conn.commit()
+
+    # -- MQTT configs --
 
     def save_mqtt_config(self, device_ip: str, config: Dict[str, Any]):
         """Save MQTT configuration for a device."""
@@ -60,7 +105,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT device_ip, config_json FROM mqtt_configs")
             rows = cursor.fetchall()
-            
+
             for ip, config_json in rows:
                 try:
                     configs[ip] = json.loads(config_json)
@@ -74,6 +119,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM mqtt_configs WHERE device_ip = ?", (device_ip,))
             conn.commit()
+
+    # -- Widget configs --
 
     def save_widget_config(self, widget_id: str, config: Dict[str, Any]):
         """Save widget configuration."""
@@ -92,7 +139,7 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute("SELECT key, value FROM kv_store WHERE key LIKE 'widget:%'")
             rows = cursor.fetchall()
-            
+
             for key, value_json in rows:
                 widget_id = key.split(":", 1)[1]
                 try:
